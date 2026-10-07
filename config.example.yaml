@@ -1,0 +1,104 @@
+# Configurazione Collaboratore AI — Gaspare Pettinati
+# Regola d'oro: modalita' dry-run attiva. Nulla viene inviato/pubblicato senza OK esplicito.
+
+modalita:
+  dry_run: true              # true = nessun invio, nessun push, nessuna pubblicazione
+  richiedi_approvazione: true
+
+profilo:
+  nome: "Gaspare Pettinati"
+  sito: "https://gasparepettinati.it"
+  email: "info@gasparepettinati.it"
+  telefono_firma: ""
+  github: ""                 # TODO: da fornire
+  linkedin: ""               # TODO: da fornire
+  fuso: "Europe/Rome"
+  lingue: ["it", "en"]
+  firma: "Gaspare Pettinati — https://gasparepettinati.it"
+
+obiettivi:
+  lavoro:
+    contratti: ["dipendente remoto", "P.IVA / freelance"]   # TODO: conferma priorita'
+    ral_minima_eur: null       # TODO
+    tariffa_giornaliera_min_eur: null   # TODO
+    solo_remoto: true
+  clienti_pmi:
+    max_nuovi_contatti_giorno: 15
+    servizi:
+      - "Automazione WhatsApp"
+      - "Supporto clienti omnichannel"
+      - "Agente telefonico AI"
+      - "CRM e gestionali su misura"
+      - "Integrazioni API"
+
+ricerca_lavoro:
+  soglia_contatto: 7          # contatta solo annunci con punteggio >= 7
+  fonti:
+    - LinkedIn
+    - Indeed
+    - InfoJobs
+    - Glassdoor
+    - We Work Remotely
+    - Remote OK
+    - Himalayas
+    - Wellfound
+    - Malt
+    - Upwork
+    - "Pagine 'Lavora con noi' di software house e PMI"
+  parole_chiave:
+    - "full stack"
+    - "backend developer"
+    - "PHP Laravel"
+    - "Node.js"
+    - "Python developer"
+    - "gestionali"
+    - "integrazioni API"
+    - "AI automation"
+    - "smart working"
+    - "remote developer"
+  pesi_punteggio:              # somma = 10
+    remoto: 2.5
+    stack_compatibile: 2.5
+    compenso: 2
+    tipo_contratto: 1
+    azienda_verificabile: 1
+    chiarezza_annuncio: 1
+  segnali_truffa:
+    - "richiesta di denaro / corso a pagamento"
+    - "azienda non identificabile (no P.IVA, no sito)"
+    - "contatto solo via Telegram/WhatsApp anonimo"
+    - "richiesta IBAN o documenti prima del colloquio"
+
+posta:
+  caselle: ["info@gasparepettinati.it"]   # TODO: casella principale
+  permessi: "sola lettura + bozze"
+  controlli_giornalieri: ["08:15", "18:15"]
+  follow_up_giorni: 5
+  max_solleciti: 2
+  categorie:
+    rosso: "lavoro / cliente"
+    arancio: "collaborazione"
+    giallo: "informazioni"
+    bianco: "newsletter"
+    stop: "spam / phishing"
+
+pipeline:
+  file: "data/pipeline.xlsx"
+  stati: [Nuovo, Contattato, Risposta, Call, "Preventivo/Colloquio", Trattativa, Vinto, Perso]
+
+report:
+  mattino: "08:30"
+  sera: "18:30"
+  settimanale: "venerdi 17:00"
+
+github:
+  repo_core_visibilita: private
+  suffisso_vetrina: "-showcase"
+  licenza_vetrine: "proprietaria"
+
+inventario:
+  radici:
+    - "~/Desktop"
+    - "~/Documents"
+    - "~/OneDrive/Desktop"
+    - "~/OneDrive/Documenti"

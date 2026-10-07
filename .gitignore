@@ -1,0 +1,49 @@
+# Segreti — MAI su git
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+token*.json
+credentials*.json
+client_secret*.json
+
+# Dati personali e di contatto (GDPR)
+data/*.xlsx
+data/*.csv
+data/registro-contatti*
+drafts/
+logs/
+reports/segreti-*
+reports/gitleaks-*
+
+# Dati runtime dell'app (database, profilo browser con cookie, report) e build
+dati/
+*.db
+*.sqlite
+data/inventario-progetti.*
+dist/
+build/tmp/
+build/*.spec
+*.spec
+
+# Ambiente
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+*.sql
+*.dump
+*.bak
+
+# Dati personali e documenti interni (repository pubblico)
+cv.md
+profilo.md
+config.yaml
+docs/ALLARMI-SICUREZZA.md
+docs/schede-progetti.md
+docs/sito-proposta.md
+docs/checklist-github-sicurezza.md
+templates/messaggi.md

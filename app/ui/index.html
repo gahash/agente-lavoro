@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agente Lavoro</title>
+<link rel="stylesheet" href="/ui/style.css">
+<script>window.TOKEN = "__TOKEN__"; window.VERSION = "__VERSION__";</script>
+</head>
+<body>
+<aside class="side">
+  <div class="brand"><span class="logo">GP</span><div><b>Agente Lavoro</b><small>v__VERSION__</small></div></div>
+  <nav id="nav">
+    <a data-v="home" class="on">🏠 Oggi</a>
+    <a data-v="todo">✅ Cose da fare <span class="badge" id="b-todo"></span></a>
+    <a data-v="chat">💬 Chiedi all'assistente</a>
+    <a data-v="lavoro">💼 Opportunità lavoro</a>
+    <a data-v="pmi">🏢 Clienti PMI</a>
+    <a data-v="bozze">✍️ Da approvare <span class="badge" id="b-bozze"></span></a>
+    <a data-v="posta">📬 Posta <span class="badge" id="b-posta"></span></a>
+    <a data-v="pipeline">📈 Pipeline</a>
+    <a data-v="crm">🔗 LinkedIn · Indeed · Gestionale</a>
+    <a data-v="impostazioni">⚙️ Impostazioni</a>
+    <a data-v="registro">📜 Registro attività</a>
+  </nav>
+  <div class="side-foot">
+    <div id="ai-stato" class="pill">AI: …</div>
+  </div>
+</aside>
+<main id="main"></main>
+<div id="toast"></div>
+<div id="modal" class="modal hidden"><div class="modal-box" id="modal-box"></div></div>
+<script src="/ui/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+# --- Segreti ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+google-services.json
+GoogleService-Info.plist
+credentials*.json
+client_secret*.json
+service-account*.json
+token*.json
+config.php
+wp-config.php
+
+# --- Dati ---
+*.sql
+*.sqlite
+*.db
+*.dump
+*.bak
+uploads/
+storage/
+recordings/
+*.wav
+*.mp3
+
+# --- Dipendenze / build ---
+node_modules/
+vendor/
+.venv/
+venv/
+__pycache__/
+dist/
+build/
+.next/
+.expo/
+.gradle/
+
+# --- Log / OS ---
+*.log
+logs/
+.DS_Store
+Thumbs.db
