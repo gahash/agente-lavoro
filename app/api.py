@@ -4,14 +4,14 @@ from __future__ import annotations
 import os
 import secrets
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .core import db, llm, vault
 from .core.config import APP_NAME, DATA, UI_DIR, VERSION, load_settings, save_settings
-from .modules import (assistente, attivita, bozze, browser, lavoro, pianificatore, pmi, portali, posta, report,
-                      sistema)
+from .modules import (assistente, attivita, bozze, browser, lavoro, pianificatore, pmi, portali, posta, progetti,
+                      report, sistema)
 
 # token di sessione: solo la finestra dell'app lo conosce (protegge da altri siti aperti nel browser)
 TOKEN = secrets.token_urlsafe(24)
@@ -371,6 +371,72 @@ def crm_leggi(data: dict = Body(default={})):
 @app.get("/api/crm/lead", dependencies=A)
 def crm_lead():
     return db.q("SELECT * FROM lead_crm ORDER BY id DESC LIMIT 500")
+
+
+# ---------- progetti GitHub ----------
+def _err_progetti(fn, *a, **kw):
+    try:
+        return ok(fn, *a, **kw)
+    except HTTPException as e:
+        raise HTTPException(400 if e.status_code == 500 else e.status_code, e.detail)
+
+
+@app.get("/api/progetti", dependencies=A)
+def progetti_lista():
+    return {"progetti": progetti.elenco(), "github": progetti.stato_github()}
+
+
+@app.post("/api/progetti/carica", dependencies=A)
+async def progetti_carica(request: Request, nome: str, pulisci: int = 0):
+    if not nome.lower().endswith(".zip"):
+        raise HTTPException(400, "Serve un file .zip")
+    tmp = progetti.nuovo_file_temporaneo()
+    letti = 0
+    try:
+        with open(tmp, "wb") as f:
+            async for pezzo in request.stream():
+                letti += len(pezzo)
+                if letti > progetti.MAX_ZIP:
+                    raise HTTPException(413, "ZIP troppo grande (massimo 1 GB)")
+                f.write(pezzo)
+        return _err_progetti(progetti.carica_zip, tmp, nome, bool(pulisci))
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+@app.get("/api/progetti/{slug}", dependencies=A)
+def progetti_dettaglio(slug: str):
+    return _err_progetti(progetti.dettaglio, slug)
+
+
+@app.post("/api/progetti/{slug}/prepara", dependencies=A)
+def progetti_prepara(slug: str, data: dict = Body(default={})):
+    return _err_progetti(progetti.prepara, slug, data.get("pulisci"))
+
+
+@app.post("/api/progetti/{slug}/pubblica", dependencies=A)
+def progetti_pubblica(slug: str, data: dict = Body(...)):
+    if data.get("conferma") is not True:
+        raise HTTPException(400, "Serve la conferma")
+    return _err_progetti(progetti.pubblica, slug, data.get("nome_repo", ""), data.get("descrizione", ""),
+                         bool(data.get("pubblico")))
+
+
+@app.post("/api/progetti/{slug}/rendi-pubblico", dependencies=A)
+def progetti_pubblico(slug: str, data: dict = Body(...)):
+    if data.get("conferma") is not True:
+        raise HTTPException(400, "Serve la conferma")
+    return _err_progetti(progetti.rendi_pubblico, slug)
+
+
+@app.post("/api/progetti/{slug}/cartella", dependencies=A)
+def progetti_cartella(slug: str):
+    return _err_progetti(progetti.apri_cartella, slug)
+
+
+@app.delete("/api/progetti/{slug}", dependencies=A)
+def progetti_elimina(slug: str):
+    return _err_progetti(progetti.elimina, slug)
 
 
 @app.get("/api/file", dependencies=A)

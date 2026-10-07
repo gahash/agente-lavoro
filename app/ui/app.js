@@ -362,6 +362,99 @@ V.crm = async m => {
   m.onclick = e => { if (e.target.dataset.read) run(e.target, () => api("/api/crm/leggi", {url: e.target.dataset.read}), r => `${r.tabelle?.length ?? 0} tabelle lette`).then(() => go("crm")); };
 };
 
+// ------------------------------------------------------------------ progetti GitHub
+// pulsante a due tempi: il primo clic chiede conferma, il secondo esegue
+function conferma2(btn, testo, fn) {
+  if (btn.dataset.armed) { delete btn.dataset.armed; return fn(); }
+  const orig = btn.innerHTML; btn.dataset.armed = "1"; btn.innerHTML = "⚠️ " + testo;
+  setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.innerHTML = orig; } }, 6000);
+}
+const GRAV = {critico: ["🔴", "var(--bad)"], personale: ["🟠", "var(--warn)"], avviso: ["⚪", "var(--muted)"]};
+const esito = a => !a || a.n_file == null ? '<span class="tag">da analizzare</span>'
+  : a.ok_pubblico ? '<span class="tag" style="color:var(--ok)">✅ pronto anche per pubblico</span>'
+  : a.ok_privato ? '<span class="tag" style="color:var(--warn)">🟠 solo privato (dati personali)</span>'
+  : '<span class="tag" style="color:var(--bad)">🔴 bloccato</span>';
+
+V.progetti = async m => {
+  const {progetti: lista, github} = await api("/api/progetti");
+  m.innerHTML = `<h1>Progetti GitHub</h1><p class="sub">Carica lo ZIP di un progetto: l'app controlla segreti (password, chiavi, token), dati personali e file sensibili.
+    Se spunti <b>Pulisci</b> li toglie lei. Il repository nasce <b>privato</b>; diventa pubblico solo con la tua conferma e se il controllo è pulito.</p>
+  <div class="card" style="margin-bottom:16px">
+    <div class="row"><span class="tag" style="color:${github.collegato ? "var(--ok)" : "var(--bad)"}">GitHub: ${github.collegato ? "collegato come " + esc(github.account) + " ✅" : "non collegato"}</span>
+      ${github.collegato ? "" : `<span class="small muted">Apri un terminale e lancia <code>gh auth login --web</code>, poi ricarica questa pagina.</span>`}</div>
+    <div class="row" style="margin:0"><input type="file" id="zip" accept=".zip,application/zip">
+      <label style="margin:0;font-size:14px;color:var(--ink)"><input type="checkbox" id="pul"> 🧹 <b>Pulisci</b> (toglie segreti, dati personali, .env, database, log, node_modules…)</label>
+      <button id="up">⬆️ Carica e controlla</button></div>
+    <p class="small muted" style="margin-bottom:0">Lo ZIP resta sul PC (in ${esc(STATO.cartella_dati)}\\progetti). La cronologia git dentro lo ZIP non viene mai caricata.</p></div>
+  <table><thead><tr><th>Progetto</th><th>Caricato</th><th>File</th><th>Controllo</th><th>GitHub</th><th></th></tr></thead><tbody>
+  ${lista.map(p => { const a = p.riassunto || {}; return `<tr><td><b>${esc(p.nome)}</b><div class="small muted">${esc(p.file_zip)}${p.pulisci ? " · 🧹 pulito" : ""}</div></td>
+    <td class="small">${dt(p.caricato)}</td><td class="small">${a.n_file ?? "–"} file<br>${a.peso_mb ?? "–"} MB</td>
+    <td>${esito(a)}<div class="small muted">🔴 ${a.n_critici ?? 0} · 🟠 ${a.n_personali ?? 0} · ⚪ ${a.n_avvisi ?? 0}</div></td>
+    <td class="small">${p.repo ? `<a href="${esc(p.repo.url)}" target="_blank">${esc(p.repo.nome)}</a><br>${p.repo.pubblico ? "🌍 pubblico" : "🔒 privato"}` : "–"}</td>
+    <td><button class="sm" data-apri="${esc(p.slug)}">Apri</button></td></tr>`; }).join("") ||
+    `<tr><td colspan="6" class="muted">Nessun progetto. Fai uno ZIP della cartella del progetto e caricalo qui sopra.</td></tr>`}</tbody></table>`;
+
+  $("#up").onclick = e => {
+    const f = $("#zip").files[0];
+    if (!f) return toast("Scegli prima un file .zip", true);
+    run(e.target, async () => {
+      const r = await fetch(`/api/progetti/carica?nome=${encodeURIComponent(f.name)}&pulisci=${$("#pul").checked ? 1 : 0}`,
+        {method: "POST", headers: {"X-Token": window.TOKEN, "Content-Type": "application/zip"}, body: f});
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || `Errore ${r.status}`);
+      return d;
+    }, "Caricato e controllato").then(d => { if (d) { go("progetti").then(() => dettaglioProgetto(d)); } });
+  };
+  m.addEventListener("click", e => { const s = e.target.dataset.apri; if (s) api(`/api/progetti/${encodeURIComponent(s)}`).then(dettaglioProgetto).catch(err => toast(err.message, true)); });
+};
+
+function dettaglioProgetto(p) {
+  const a = p.analisi || {}, pz = p.pulizia, r = p.repo;
+  const trovati = (a.trovati || []).filter(t => t.gravita !== "avviso"), avvisi = (a.trovati || []).filter(t => t.gravita === "avviso");
+  const riga = t => `<tr><td>${GRAV[t.gravita][0]}</td><td class="small">${esc(t.tipo)}</td><td class="small"><code>${esc(t.file)}</code>:${t.riga}</td><td class="small"><code>${esc(t.anteprima)}</code></td></tr>`;
+  modal(`<h2 style="margin-top:0">📦 ${esc(p.nome)}</h2>
+   <div class="row">${esito(a)}<span class="tag">${a.n_file ?? 0} file · ${a.peso_mb ?? 0} MB</span>
+     <span class="tag">🔴 ${a.n_critici ?? 0} critici</span><span class="tag">🟠 ${a.n_personali ?? 0} dati personali</span><span class="tag">⚪ ${a.n_avvisi ?? 0} avvisi</span></div>
+   ${pz ? `<div class="card" style="margin-bottom:10px"><b>🧹 Pulizia fatta</b> — ${pz.rimossi.length} file/cartelle tolti, ${pz.sostituiti.reduce((n, x) => n + x.sostituzioni, 0)} valori sostituiti con <code>***RIMOSSO***</code> in ${pz.sostituiti.length} file${pz.env_example.length ? `, creati ${pz.env_example.map(esc).join(", ")}` : ""}.
+     <details><summary class="small">Dettaglio</summary><div class="small"><b>Tolti:</b> ${pz.rimossi.map(x => `<code>${esc(x)}</code>`).join(" ") || "nessuno"}<br>
+     <b>Modificati:</b> ${pz.sostituiti.map(x => `<code>${esc(x.file)}</code> (${x.sostituzioni})`).join(" ") || "nessuno"}</div></details></div>` : ""}
+   ${(a.sensibili || []).length ? `<div class="warnbox">File sensibili che verrebbero caricati: ${a.sensibili.map(esc).join(", ")}</div>` : ""}
+   ${(a.grandi || []).length ? `<div class="warnbox">File oltre 95 MB (GitHub li rifiuta): ${a.grandi.map(esc).join(", ")}</div>` : ""}
+   ${trovati.length ? `<h2>Da sistemare</h2><table><tbody>${trovati.slice(0, 200).map(riga).join("")}</tbody></table>` : `<p style="color:var(--ok)">✅ Nessun segreto né dato personale nei file da caricare.</p>`}
+   ${avvisi.length ? `<details><summary class="small">⚪ ${avvisi.length} avvisi (email di lavoro, indirizzi IP): controlla che vadano bene</summary><table><tbody>${avvisi.slice(0, 200).map(riga).join("")}</tbody></table></details>` : ""}
+   <details><summary class="small">📄 File che verrebbero caricati (${a.n_file ?? 0})</summary><pre class="small" style="max-height:220px;overflow:auto">${(a.file || []).map(esc).join("\n")}</pre></details>
+   <div class="row" style="margin-top:12px"><label style="margin:0;font-size:14px;color:var(--ink)"><input type="checkbox" id="d-pul" ${p.pulisci ? "checked" : ""}> 🧹 Pulisci</label>
+     <button class="sec" id="d-ana">🔄 Rianalizza</button><button class="sec" id="d-dir">📂 Apri cartella</button>
+     <span class="small muted">Puoi correggere i file a mano nella cartella e poi premere Rianalizza.</span></div>
+   ${r ? `<div class="card"><b>GitHub:</b> <a href="${esc(r.url)}" target="_blank">${esc(r.url)}</a> — ${r.pubblico ? "🌍 pubblico" : "🔒 privato"}
+       ${r.pubblico ? "" : `<div class="row" style="margin:10px 0 0"><button id="d-pubb" ${a.ok_pubblico ? "" : "disabled"}>🌍 Rendi pubblico</button>
+       ${a.ok_pubblico ? "" : `<span class="small muted">Prima togli i dati personali (attiva Pulisci e Rianalizza).</span>`}</div>`}</div>`
+   : `<div class="card"><h2 style="margin-top:0">⬆️ Pubblica su GitHub</h2>
+       <label>Nome del repository</label><input id="d-nome" value="${esc(p.slug)}" style="width:100%">
+       <label>Descrizione</label><input id="d-desc" value="${esc(p.nome)}" style="width:100%">
+       <label style="font-size:14px;color:var(--ink)"><input type="radio" name="vis" value="0" checked> 🔒 Privato (consigliato: lo rendi pubblico dopo)</label>
+       <label style="font-size:14px;color:var(--ink)"><input type="radio" name="vis" value="1" ${a.ok_pubblico ? "" : "disabled"}> 🌍 Pubblico ${a.ok_pubblico ? "" : "— non disponibile: ci sono dati personali o segreti"}</label>
+       <div class="row" style="margin-top:10px"><button id="d-pub" ${a.ok_privato ? "" : "disabled"}>⬆️ Pubblica su GitHub</button>
+       ${a.ok_privato ? "" : `<span class="small" style="color:var(--bad)">Bloccato: attiva Pulisci e premi Rianalizza, oppure correggi i file.</span>`}</div></div>`}
+   <div class="row" style="margin-top:12px;justify-content:space-between"><button class="sec sm" id="d-del">🗑️ Elimina copia locale</button><button class="sec" onclick="closeModal()">Chiudi</button></div>`);
+  const slug = encodeURIComponent(p.slug), box = $("#modal-box");
+  const ricarica = d => go("progetti").then(() => dettaglioProgetto(d));
+  $("#d-ana", box).onclick = e => run(e.target, () => api(`/api/progetti/${slug}/prepara`, {pulisci: $("#d-pul").checked}), "Analisi aggiornata").then(d => d && ricarica(d));
+  $("#d-dir", box).onclick = e => run(e.target, () => api(`/api/progetti/${slug}/cartella`, {}));
+  $("#d-del", box).onclick = e => conferma2(e.target, "Elimino la copia nell'app (GitHub non viene toccato). Clicca di nuovo",
+    () => run(e.target, () => api(`/api/progetti/${slug}`, undefined, "DELETE"), "Copia locale eliminata").then(() => { closeModal(); go("progetti"); }));
+  const pub = $("#d-pub", box);
+  if (pub) pub.onclick = e => {
+    const pubblico = box.querySelector('input[name=vis]:checked').value === "1";
+    conferma2(e.target, `Carico su GitHub come ${pubblico ? "PUBBLICO" : "privato"}? Clicca di nuovo per confermare`,
+      () => run(e.target, () => api(`/api/progetti/${slug}/pubblica`, {conferma: true, pubblico, nome_repo: $("#d-nome").value, descrizione: $("#d-desc").value}),
+        d => "Pubblicato: " + d.repo.url).then(d => d && ricarica(d)));
+  };
+  const pubb = $("#d-pubb", box);
+  if (pubb) pubb.onclick = e => conferma2(e.target, "Diventa visibile a tutti. Clicca di nuovo per confermare",
+    () => run(e.target, () => api(`/api/progetti/${slug}/rendi-pubblico`, {conferma: true}), "Ora è pubblico 🌍").then(d => d && ricarica(d)));
+}
+
 V.impostazioni = async m => {
   await refreshStato(); const s = STATO.impostazioni, c = STATO.credenziali;
   m.innerHTML = `<h1>Impostazioni</h1><p class="sub">Dati salvati in <code>${esc(STATO.cartella_dati)}</code>. Le credenziali vanno nel Gestore credenziali di Windows (cifrate), mai su file.</p>
