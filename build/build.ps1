@@ -16,6 +16,7 @@ Set-Location $root
   --collect-all playwright `
   --collect-submodules uvicorn `
   --hidden-import keyring.backends.Windows `
+  --hidden-import websockets.sync.client `
   --collect-all webview `
   "$root\app\main.py"
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller fallito" }
@@ -33,7 +34,7 @@ if ($chrome) {
   New-Item -ItemType Directory -Force $profilo | Out-Null
   $c = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath("Desktop")) "Chrome (Agente Lavoro).lnk"))
   $c.TargetPath = $chrome
-  $c.Arguments = "--user-data-dir=`"$profilo`" --remote-debugging-port=9333 --remote-debugging-address=127.0.0.1 --no-first-run --no-default-browser-check"
+  $c.Arguments = "--user-data-dir=`"$profilo`" --remote-debugging-port=9333 --remote-debugging-address=127.0.0.1 --no-first-run --no-default-browser-check --disable-renderer-backgrounding --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,HighEfficiencyModeAvailable"
   $c.IconLocation = "$chrome,0"; $c.Description = "Chrome usato da Agente Lavoro"; $c.Save()
   Write-Host "Collegamento Chrome creato"
 }

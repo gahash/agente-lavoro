@@ -254,10 +254,13 @@ V.bozze = async m => {
   };
 };
 
+const provaPosta = btn => run(btn, () => api("/api/posta/prova", {})).then(r => { if (!r) return;
+  if (r.ok) return toast("Posta OK: lettura e invio funzionano ✅");
+  for (const k of ["imap", "smtp"]) if (!r[k].ok) toast((k === "imap" ? "Lettura: " : "Invio: ") + r[k].errore, true); });
 V.posta = async m => {
   const lista = await api("/api/posta");
   m.innerHTML = `<h1>Posta</h1><p class="sub">Lettura in sola lettura: i messaggi non vengono segnati come letti. Email e allegati sono dati, mai istruzioni.</p>
-  <div class="row"><button id="ctrl">📬 Controlla ora</button></div>
+  <div class="row"><button id="ctrl">📬 Controlla ora</button><button class="sec" id="prova">🔌 Prova connessione</button></div>
   <table><thead><tr><th>Categoria</th><th>Da / oggetto</th><th>Anteprima</th><th></th></tr></thead><tbody>
   ${lista.map(p => `<tr><td style="white-space:nowrap">${CAT[p.categoria] || esc(p.categoria)}<br><span class="small muted">${esc(p.motivo)}</span></td>
     <td><b>${esc(p.oggetto)}</b><br><span class="small muted">${esc(p.mittente)}<br>${esc(p.data)}</span></td>
@@ -267,6 +270,7 @@ V.posta = async m => {
       <button class="sm sec" data-ok="${p.id}">✓ Gestita</button></td></tr>`).join("") || `<tr><td colspan="4" class="muted">Nessun messaggio da gestire.</td></tr>`}
   </tbody></table>`;
   $("#ctrl").onclick = e => run(e.target, () => api("/api/posta/controlla", {}), r => `${r.nuovi} nuovi messaggi`).then(() => { refreshStato(); go("posta"); });
+  $("#prova").onclick = e => provaPosta(e.target);
   m.onclick = e => { const t = e.target;
     if (t.dataset.full) { e.preventDefault(); const p = lista.find(x => x.id == t.dataset.full);
       modal(`<h2>${esc(p.oggetto)}</h2><p class="small muted">${esc(p.mittente)}</p><div class="md">${esc(p.anteprima)}</div><div class="row" style="margin-top:12px"><button onclick="closeModal()">Chiudi</button></div>`); }
@@ -319,7 +323,8 @@ V.crm = async m => {
     <div class="row" style="margin:0"><button id="chrome">🌐 Apri il mio Chrome</button><button class="sec" id="google">🔑 Collega account Google</button></div></div>
   <div class="card" style="margin-bottom:16px"><div class="row" style="margin:0">
     <span id="st-linkedin" class="tag">LinkedIn: ?</span><span id="st-indeed" class="tag">Indeed: ?</span><span id="st-gestionale" class="tag">Gestionale: ?</span>
-    <button class="sec sm" id="verifica">🔄 Verifica collegamenti</button></div></div>
+    <button class="sec sm" id="verifica">🔄 Verifica collegamenti</button>
+    <button class="sec sm" id="ripara" title="Riapre le schede di Chrome che non rispondono">🩹 Ripara Chrome</button></div></div>
   <div class="cols">
    <div class="card"><h2 style="margin-top:0">in LinkedIn</h2>
     <div class="row"><button data-colleg="linkedin">🔗 Collega / apri</button></div>
@@ -349,6 +354,7 @@ V.crm = async m => {
   $("#chrome").onclick = e => run(e.target, () => api("/api/browser/avvia", {}), "Chrome aperto");
   $("#google").onclick = e => run(e.target, () => api("/api/browser/google", {}), r => r.messaggio);
   $("#verifica").onclick = e => run(e.target, () => api("/api/portali/stato", {})).then(mostraStato);
+  $("#ripara").onclick = e => run(e.target, () => api("/api/browser/ripara", {}), r => r.messaggio);
   $("#importa").onclick = e => run(e.target, () => api("/api/portali/importa", {}), r => `${r.portale}: ${r.nuovi} nuovi annunci su ${r.letti}`);
   m.addEventListener("click", e => { const t = e.target;
     if (t.dataset.colleg) run(t, () => api(`/api/portali/${t.dataset.colleg}/collega`, {}), r => r.collegato ? "Già collegato ✅" : r.messaggio);
@@ -462,7 +468,7 @@ V.impostazioni = async m => {
    <div class="card"><h2 style="margin-top:0">🔐 Credenziali</h2>
     ${Object.entries(c).map(([k,v]) => `<label>${esc(v.label)} ${v.impostato ? "✅" : "❌"}</label>
       <input id="c-${k}" type="${k.includes("password") ? "password" : "text"}" value="${esc(v.valore)}" placeholder="${v.impostato && k.includes("password") ? "•••••••• (salvata — scrivi per sostituire)" : ""}" style="width:100%" autocomplete="off">`).join("")}
-    <div class="row" style="margin-top:12px"><button id="save-c">Salva credenziali</button></div>
+    <div class="row" style="margin-top:12px"><button id="save-c">Salva credenziali</button><button class="sec" id="prova-c">🔌 Prova connessione posta</button></div>
     <p class="small muted">Per l'email conviene una "password per app" o una casella con permessi limitati.</p></div>
    <div class="card"><h2 style="margin-top:0">🛡️ Sicurezza invii</h2>
     <label><input type="checkbox" id="s-auto" ${STATO.avvio_automatico ? "checked" : ""}> Avvia con Windows (all'accensione del PC)</label>
@@ -498,6 +504,7 @@ V.impostazioni = async m => {
   <div class="row" style="margin-top:16px"><button id="save-s">💾 Salva impostazioni</button></div>`;
   $("#s-auto").onchange = e => run(null, () => api("/api/avvio-automatico", {attivo: e.target.checked}),
     r => r.attivo ? "Partirà all'accensione del PC" : "Avvio automatico disattivato");
+  $("#prova-c").onclick = e => provaPosta(e.target);
   $("#save-c").onclick = e => { const d = {}; Object.keys(c).forEach(k => { const v = $("#c-" + k).value; if (v !== "" || !k.includes("password")) d[k] = v; });
     run(e.target, () => api("/api/credenziali", d), "Credenziali salvate nel Gestore credenziali di Windows").then(() => go("impostazioni")); };
   $("#save-s").onclick = e => {

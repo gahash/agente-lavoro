@@ -179,6 +179,11 @@ def posta_controlla(data: dict = Body(default={})):
     return ok(posta.controlla, giorni=int(data.get("giorni", 3)))
 
 
+@app.post("/api/posta/prova", dependencies=A)
+def posta_prova():
+    return ok(posta.prova_connessione)
+
+
 @app.get("/api/posta", dependencies=A)
 def posta_lista(tutte: int = 0):
     sql = "SELECT * FROM posta" + ("" if tutte else " WHERE gestita=0")
@@ -351,6 +356,11 @@ def br_google():
 def br_avvia():
     ok(browser.avvia_browser)
     return browser.stato_browser()
+
+
+@app.post("/api/browser/ripara", dependencies=A)
+def br_ripara():
+    return ok(browser.ripara)
 
 
 @app.post("/api/browser/chiudi", dependencies=A)
