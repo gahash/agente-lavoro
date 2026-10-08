@@ -134,7 +134,7 @@ SEGNAPOSTO = "***RIMOSSO***"
 #   avviso    -> solo segnalato
 CONTROLLI: dict[str, tuple[str, re.Pattern, object]] = {
     "Chiave privata": ("critico", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED )?PRIVATE KEY-----"), 0),
-    "Chiave Anthropic": ("critico", re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"), 0),
+    "Chiave API LLM": ("critico", re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"), 0),
     "Chiave OpenAI": ("critico", re.compile(r"sk-(?:proj-)?[A-Za-z0-9_\-]{20,}"), 0),
     "Chiave Google": ("critico", re.compile(r"AIza[0-9A-Za-z_\-]{35}"), 0),
     "Chiave AWS": ("critico", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), 0),

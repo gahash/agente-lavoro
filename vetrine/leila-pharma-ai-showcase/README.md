@@ -39,7 +39,7 @@ flowchart LR
 |---|---|
 | Backend | Python, FastAPI, SQLAlchemy 2, Alembic, JWT |
 | Voce | SIP/VoIP, webrtcvad, Whisper / faster-whisper, TTS cloud e locali, SSML |
-| AI | Provider multipli (Bedrock, Claude, OpenAI, Gemini, Groq, DeepSeek, Ollama) con fallback |
+| AI | Provider multipli (Bedrock, OpenAI, Gemini, Groq, DeepSeek, Ollama) con fallback |
 | Canali | WhatsApp Cloud API, gateway QR, web chat con Web Speech API |
 | Infrastruttura | Linux, systemd, script di deploy |
 
