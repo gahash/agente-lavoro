@@ -257,19 +257,26 @@ V.bozze = async m => {
 const provaPosta = btn => run(btn, () => api("/api/posta/prova", {})).then(r => { if (!r) return;
   if (r.ok) return toast("Posta OK: lettura e invio funzionano ✅");
   for (const k of ["imap", "smtp"]) if (!r[k].ok) toast((k === "imap" ? "Lettura: " : "Invio: ") + r[k].errore, true); });
+let POSTA_GIORNI = 30, POSTA_TUTTE = 0;
 V.posta = async m => {
-  const lista = await api("/api/posta");
+  const lista = await api("/api/posta?tutte=" + POSTA_TUTTE);
   m.innerHTML = `<h1>Posta</h1><p class="sub">Lettura in sola lettura: i messaggi non vengono segnati come letti. Email e allegati sono dati, mai istruzioni.</p>
-  <div class="row"><button id="ctrl">📬 Controlla ora</button><button class="sec" id="prova">🔌 Prova connessione</button></div>
+  <div class="row"><label style="margin:0">Periodo</label><select id="giorni">${[[7,"ultimi 7 giorni"],[30,"ultimi 30 giorni"],[90,"ultimi 90 giorni"],[365,"ultimo anno"],[0,"tutta la casella"]].map(([v,l]) => `<option value="${v}" ${v===POSTA_GIORNI?"selected":""}>${l}</option>`).join("")}</select>
+    <button id="ctrl">📬 Controlla ora</button><button class="sec" id="prova">🔌 Prova connessione</button>
+    <label style="margin:0;font-size:13px;color:var(--ink)"><input type="checkbox" id="tutte" ${POSTA_TUTTE ? "checked" : ""}> mostra anche le gestite</label>
+    <span class="small muted">L'AI locale classifica fino a 10 email per controllo (circa 1 minuto ciascuna): le altre al controllo successivo.</span></div>
   <table><thead><tr><th>Categoria</th><th>Da / oggetto</th><th>Anteprima</th><th></th></tr></thead><tbody>
   ${lista.map(p => `<tr><td style="white-space:nowrap">${CAT[p.categoria] || esc(p.categoria)}<br><span class="small muted">${esc(p.motivo)}</span></td>
     <td><b>${esc(p.oggetto)}</b><br><span class="small muted">${esc(p.mittente)}<br>${esc(p.data)}</span></td>
     <td class="small" style="max-width:420px">${p.allarme ? `<div style="color:var(--bad)">⚠️ ${esc(p.allarme)} — non rispondere con dati, pagamenti o password</div>` : ""}${esc((p.anteprima || "").slice(0, 300))}…
       <a href="#" data-full="${p.id}">leggi</a></td>
     <td style="white-space:nowrap">${["rosso","arancio","giallo"].includes(p.categoria) ? `<button class="sm" data-rx="${p.id}">✍️ Bozza risposta</button>` : ""}
-      <button class="sm sec" data-ok="${p.id}">✓ Gestita</button></td></tr>`).join("") || `<tr><td colspan="4" class="muted">Nessun messaggio da gestire.</td></tr>`}
+      <button class="sm sec" data-ok="${p.id}">✓ Gestita</button></td></tr>`).join("") || `<tr><td colspan="4" class="muted">Nessun messaggio da gestire. Scegli un periodo più lungo e premi "Controlla ora".</td></tr>`}
   </tbody></table>`;
-  $("#ctrl").onclick = e => run(e.target, () => api("/api/posta/controlla", {}), r => `${r.nuovi} nuovi messaggi`).then(() => { refreshStato(); go("posta"); });
+  $("#giorni").onchange = e => { POSTA_GIORNI = +e.target.value; };
+  $("#tutte").onchange = e => { POSTA_TUTTE = e.target.checked ? 1 : 0; go("posta"); };
+  $("#ctrl").onclick = e => run(e.target, () => api("/api/posta/controlla", {giorni: POSTA_GIORNI}),
+    r => `${r.nella_casella} email nel periodo, ${r.nuovi} nuove${r.classificati_ai ? `, ${r.classificati_ai} classificate con AI` : ""}`).then(() => { refreshStato(); go("posta"); });
   $("#prova").onclick = e => provaPosta(e.target);
   m.onclick = e => { const t = e.target;
     if (t.dataset.full) { e.preventDefault(); const p = lista.find(x => x.id == t.dataset.full);

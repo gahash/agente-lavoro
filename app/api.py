@@ -176,7 +176,7 @@ def bozza_casella(bid: int):
 # ---------- posta ----------
 @app.post("/api/posta/controlla", dependencies=A)
 def posta_controlla(data: dict = Body(default={})):
-    return ok(posta.controlla, giorni=int(data.get("giorni", 3)))
+    return ok(posta.controlla, giorni=int(data.get("giorni", 7)), max_ai=int(data.get("max_ai", 10)))
 
 
 @app.post("/api/posta/prova", dependencies=A)
