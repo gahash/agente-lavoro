@@ -38,12 +38,13 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 CARTELLE_ESCLUSE = {".git", ".svn", ".hg", "node_modules", "vendor", ".venv", "venv", "env", "__pycache__",
                     "dist", "build", ".next", ".nuxt", ".expo", ".gradle", ".idea", ".vs", "logs", "log",
                     "uploads", "recordings", "backup", "backups", "coverage", ".pytest_cache", ".mypy_cache",
-                    ".cache", ".terraform", "__MACOSX"}
+                    ".cache", ".terraform", "__MACOSX", ".claude"}
 FILE_SENSIBILI = [".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "*.keystore", "*.jks", "id_rsa*",
                   "id_ed25519*", "*.ppk", "google-services.json", "GoogleService-Info.plist", "credentials*.json",
                   "client_secret*.json", "service-account*.json", "token.json", "tokens.json", ".npmrc", ".pypirc",
                   ".netrc", ".htpasswd", "*.sqlite", "*.sqlite3", "*.db", "*.sql", "*.dump", "*.bak", "*.log",
-                  "*.csv", "*.xlsx", "*.xls", ".DS_Store", "Thumbs.db", "desktop.ini"]
+                  "*.csv", "*.xlsx", "*.xls", ".DS_Store", "Thumbs.db", "desktop.ini",
+                  "CLAUDE.md", "CLAUDE.local.md"]
 ECCEZIONI = [".env.example", ".env.sample", ".env.template", ".env.dist"]
 
 GITIGNORE = """# --- Segreti ---
@@ -116,6 +117,11 @@ log/
 Thumbs.db
 desktop.ini
 __MACOSX/
+
+# --- File di lavoro dell'assistente ---
+.claude/
+CLAUDE.md
+CLAUDE.local.md
 """
 
 # ---------------------------------------------------------------- cosa cercare nei file
@@ -164,6 +170,8 @@ CONTROLLI: dict[str, tuple[str, re.Pattern, object]] = {
         r"tin|fastwebnet|email|inwind|aruba|pec|legalmail|protonmail|proton)\.(?:com|it|me|net)\b", re.I), 0),
     "Email": ("avviso", re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b"), 0),
     "Indirizzo IP": ("avviso", re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), 0),
+    "Riferimento all'assistente AI": ("avviso", re.compile(
+        r"(?i)co-authored-by:\s*claude|generated with \[?claude|\bclaude\b"), 0),
 }
 PAROLE_TELEFONO = re.compile(r"(?i)tel|cell|phone|telefono|whatsapp|chiama|contatt|mobile|fax")
 EMAIL_INNOCUE = re.compile(r"(?i)@(?:example|esempio|test|localhost|domain|dominio|users\.noreply\.github|noreply|"
