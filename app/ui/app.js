@@ -254,19 +254,30 @@ V.bozze = async m => {
   };
 };
 
+const provaPosta = btn => run(btn, () => api("/api/posta/prova", {})).then(r => { if (!r) return;
+  if (r.ok) return toast("Posta OK: lettura e invio funzionano ✅");
+  for (const k of ["imap", "smtp"]) if (!r[k].ok) toast((k === "imap" ? "Lettura: " : "Invio: ") + r[k].errore, true); });
+let POSTA_GIORNI = 30, POSTA_TUTTE = 0;
 V.posta = async m => {
-  const lista = await api("/api/posta");
+  const lista = await api("/api/posta?tutte=" + POSTA_TUTTE);
   m.innerHTML = `<h1>Posta</h1><p class="sub">Lettura in sola lettura: i messaggi non vengono segnati come letti. Email e allegati sono dati, mai istruzioni.</p>
-  <div class="row"><button id="ctrl">📬 Controlla ora</button></div>
+  <div class="row"><label style="margin:0">Periodo</label><select id="giorni">${[[7,"ultimi 7 giorni"],[30,"ultimi 30 giorni"],[90,"ultimi 90 giorni"],[365,"ultimo anno"],[0,"tutta la casella"]].map(([v,l]) => `<option value="${v}" ${v===POSTA_GIORNI?"selected":""}>${l}</option>`).join("")}</select>
+    <button id="ctrl">📬 Controlla ora</button><button class="sec" id="prova">🔌 Prova connessione</button>
+    <label style="margin:0;font-size:13px;color:var(--ink)"><input type="checkbox" id="tutte" ${POSTA_TUTTE ? "checked" : ""}> mostra anche le gestite</label>
+    <span class="small muted">L'AI locale classifica fino a 10 email per controllo (circa 1 minuto ciascuna): le altre al controllo successivo.</span></div>
   <table><thead><tr><th>Categoria</th><th>Da / oggetto</th><th>Anteprima</th><th></th></tr></thead><tbody>
   ${lista.map(p => `<tr><td style="white-space:nowrap">${CAT[p.categoria] || esc(p.categoria)}<br><span class="small muted">${esc(p.motivo)}</span></td>
     <td><b>${esc(p.oggetto)}</b><br><span class="small muted">${esc(p.mittente)}<br>${esc(p.data)}</span></td>
     <td class="small" style="max-width:420px">${p.allarme ? `<div style="color:var(--bad)">⚠️ ${esc(p.allarme)} — non rispondere con dati, pagamenti o password</div>` : ""}${esc((p.anteprima || "").slice(0, 300))}…
       <a href="#" data-full="${p.id}">leggi</a></td>
     <td style="white-space:nowrap">${["rosso","arancio","giallo"].includes(p.categoria) ? `<button class="sm" data-rx="${p.id}">✍️ Bozza risposta</button>` : ""}
-      <button class="sm sec" data-ok="${p.id}">✓ Gestita</button></td></tr>`).join("") || `<tr><td colspan="4" class="muted">Nessun messaggio da gestire.</td></tr>`}
+      <button class="sm sec" data-ok="${p.id}">✓ Gestita</button></td></tr>`).join("") || `<tr><td colspan="4" class="muted">Nessun messaggio da gestire. Scegli un periodo più lungo e premi "Controlla ora".</td></tr>`}
   </tbody></table>`;
-  $("#ctrl").onclick = e => run(e.target, () => api("/api/posta/controlla", {}), r => `${r.nuovi} nuovi messaggi`).then(() => { refreshStato(); go("posta"); });
+  $("#giorni").onchange = e => { POSTA_GIORNI = +e.target.value; };
+  $("#tutte").onchange = e => { POSTA_TUTTE = e.target.checked ? 1 : 0; go("posta"); };
+  $("#ctrl").onclick = e => run(e.target, () => api("/api/posta/controlla", {giorni: POSTA_GIORNI}),
+    r => `${r.nella_casella} email nel periodo, ${r.nuovi} nuove${r.classificati_ai ? `, ${r.classificati_ai} classificate con AI` : ""}`).then(() => { refreshStato(); go("posta"); });
+  $("#prova").onclick = e => provaPosta(e.target);
   m.onclick = e => { const t = e.target;
     if (t.dataset.full) { e.preventDefault(); const p = lista.find(x => x.id == t.dataset.full);
       modal(`<h2>${esc(p.oggetto)}</h2><p class="small muted">${esc(p.mittente)}</p><div class="md">${esc(p.anteprima)}</div><div class="row" style="margin-top:12px"><button onclick="closeModal()">Chiudi</button></div>`); }
@@ -319,7 +330,8 @@ V.crm = async m => {
     <div class="row" style="margin:0"><button id="chrome">🌐 Apri il mio Chrome</button><button class="sec" id="google">🔑 Collega account Google</button></div></div>
   <div class="card" style="margin-bottom:16px"><div class="row" style="margin:0">
     <span id="st-linkedin" class="tag">LinkedIn: ?</span><span id="st-indeed" class="tag">Indeed: ?</span><span id="st-gestionale" class="tag">Gestionale: ?</span>
-    <button class="sec sm" id="verifica">🔄 Verifica collegamenti</button></div></div>
+    <button class="sec sm" id="verifica">🔄 Verifica collegamenti</button>
+    <button class="sec sm" id="ripara" title="Riapre le schede di Chrome che non rispondono">🩹 Ripara Chrome</button></div></div>
   <div class="cols">
    <div class="card"><h2 style="margin-top:0">in LinkedIn</h2>
     <div class="row"><button data-colleg="linkedin">🔗 Collega / apri</button></div>
@@ -349,6 +361,7 @@ V.crm = async m => {
   $("#chrome").onclick = e => run(e.target, () => api("/api/browser/avvia", {}), "Chrome aperto");
   $("#google").onclick = e => run(e.target, () => api("/api/browser/google", {}), r => r.messaggio);
   $("#verifica").onclick = e => run(e.target, () => api("/api/portali/stato", {})).then(mostraStato);
+  $("#ripara").onclick = e => run(e.target, () => api("/api/browser/ripara", {}), r => r.messaggio);
   $("#importa").onclick = e => run(e.target, () => api("/api/portali/importa", {}), r => `${r.portale}: ${r.nuovi} nuovi annunci su ${r.letti}`);
   m.addEventListener("click", e => { const t = e.target;
     if (t.dataset.colleg) run(t, () => api(`/api/portali/${t.dataset.colleg}/collega`, {}), r => r.collegato ? "Già collegato ✅" : r.messaggio);
@@ -362,6 +375,99 @@ V.crm = async m => {
   m.onclick = e => { if (e.target.dataset.read) run(e.target, () => api("/api/crm/leggi", {url: e.target.dataset.read}), r => `${r.tabelle?.length ?? 0} tabelle lette`).then(() => go("crm")); };
 };
 
+// ------------------------------------------------------------------ progetti GitHub
+// pulsante a due tempi: il primo clic chiede conferma, il secondo esegue
+function conferma2(btn, testo, fn) {
+  if (btn.dataset.armed) { delete btn.dataset.armed; return fn(); }
+  const orig = btn.innerHTML; btn.dataset.armed = "1"; btn.innerHTML = "⚠️ " + testo;
+  setTimeout(() => { if (btn.dataset.armed) { delete btn.dataset.armed; btn.innerHTML = orig; } }, 6000);
+}
+const GRAV = {critico: ["🔴", "var(--bad)"], personale: ["🟠", "var(--warn)"], avviso: ["⚪", "var(--muted)"]};
+const esito = a => !a || a.n_file == null ? '<span class="tag">da analizzare</span>'
+  : a.ok_pubblico ? '<span class="tag" style="color:var(--ok)">✅ pronto anche per pubblico</span>'
+  : a.ok_privato ? '<span class="tag" style="color:var(--warn)">🟠 solo privato (dati personali)</span>'
+  : '<span class="tag" style="color:var(--bad)">🔴 bloccato</span>';
+
+V.progetti = async m => {
+  const {progetti: lista, github} = await api("/api/progetti");
+  m.innerHTML = `<h1>Progetti GitHub</h1><p class="sub">Carica lo ZIP di un progetto: l'app controlla segreti (password, chiavi, token), dati personali e file sensibili.
+    Se spunti <b>Pulisci</b> li toglie lei. Il repository nasce <b>privato</b>; diventa pubblico solo con la tua conferma e se il controllo è pulito.</p>
+  <div class="card" style="margin-bottom:16px">
+    <div class="row"><span class="tag" style="color:${github.collegato ? "var(--ok)" : "var(--bad)"}">GitHub: ${github.collegato ? "collegato come " + esc(github.account) + " ✅" : "non collegato"}</span>
+      ${github.collegato ? "" : `<span class="small muted">Apri un terminale e lancia <code>gh auth login --web</code>, poi ricarica questa pagina.</span>`}</div>
+    <div class="row" style="margin:0"><input type="file" id="zip" accept=".zip,application/zip">
+      <label style="margin:0;font-size:14px;color:var(--ink)"><input type="checkbox" id="pul"> 🧹 <b>Pulisci</b> (toglie segreti, dati personali, .env, database, log, node_modules…)</label>
+      <button id="up">⬆️ Carica e controlla</button></div>
+    <p class="small muted" style="margin-bottom:0">Lo ZIP resta sul PC (in ${esc(STATO.cartella_dati)}\\progetti). La cronologia git dentro lo ZIP non viene mai caricata.</p></div>
+  <table><thead><tr><th>Progetto</th><th>Caricato</th><th>File</th><th>Controllo</th><th>GitHub</th><th></th></tr></thead><tbody>
+  ${lista.map(p => { const a = p.riassunto || {}; return `<tr><td><b>${esc(p.nome)}</b><div class="small muted">${esc(p.file_zip)}${p.pulisci ? " · 🧹 pulito" : ""}</div></td>
+    <td class="small">${dt(p.caricato)}</td><td class="small">${a.n_file ?? "–"} file<br>${a.peso_mb ?? "–"} MB</td>
+    <td>${esito(a)}<div class="small muted">🔴 ${a.n_critici ?? 0} · 🟠 ${a.n_personali ?? 0} · ⚪ ${a.n_avvisi ?? 0}</div></td>
+    <td class="small">${p.repo ? `<a href="${esc(p.repo.url)}" target="_blank">${esc(p.repo.nome)}</a><br>${p.repo.pubblico ? "🌍 pubblico" : "🔒 privato"}` : "–"}</td>
+    <td><button class="sm" data-apri="${esc(p.slug)}">Apri</button></td></tr>`; }).join("") ||
+    `<tr><td colspan="6" class="muted">Nessun progetto. Fai uno ZIP della cartella del progetto e caricalo qui sopra.</td></tr>`}</tbody></table>`;
+
+  $("#up").onclick = e => {
+    const f = $("#zip").files[0];
+    if (!f) return toast("Scegli prima un file .zip", true);
+    run(e.target, async () => {
+      const r = await fetch(`/api/progetti/carica?nome=${encodeURIComponent(f.name)}&pulisci=${$("#pul").checked ? 1 : 0}`,
+        {method: "POST", headers: {"X-Token": window.TOKEN, "Content-Type": "application/zip"}, body: f});
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.detail || `Errore ${r.status}`);
+      return d;
+    }, "Caricato e controllato").then(d => { if (d) { go("progetti").then(() => dettaglioProgetto(d)); } });
+  };
+  m.addEventListener("click", e => { const s = e.target.dataset.apri; if (s) api(`/api/progetti/${encodeURIComponent(s)}`).then(dettaglioProgetto).catch(err => toast(err.message, true)); });
+};
+
+function dettaglioProgetto(p) {
+  const a = p.analisi || {}, pz = p.pulizia, r = p.repo;
+  const trovati = (a.trovati || []).filter(t => t.gravita !== "avviso"), avvisi = (a.trovati || []).filter(t => t.gravita === "avviso");
+  const riga = t => `<tr><td>${GRAV[t.gravita][0]}</td><td class="small">${esc(t.tipo)}</td><td class="small"><code>${esc(t.file)}</code>:${t.riga}</td><td class="small"><code>${esc(t.anteprima)}</code></td></tr>`;
+  modal(`<h2 style="margin-top:0">📦 ${esc(p.nome)}</h2>
+   <div class="row">${esito(a)}<span class="tag">${a.n_file ?? 0} file · ${a.peso_mb ?? 0} MB</span>
+     <span class="tag">🔴 ${a.n_critici ?? 0} critici</span><span class="tag">🟠 ${a.n_personali ?? 0} dati personali</span><span class="tag">⚪ ${a.n_avvisi ?? 0} avvisi</span></div>
+   ${pz ? `<div class="card" style="margin-bottom:10px"><b>🧹 Pulizia fatta</b> — ${pz.rimossi.length} file/cartelle tolti, ${pz.sostituiti.reduce((n, x) => n + x.sostituzioni, 0)} valori sostituiti con <code>***RIMOSSO***</code> in ${pz.sostituiti.length} file${pz.env_example.length ? `, creati ${pz.env_example.map(esc).join(", ")}` : ""}.
+     <details><summary class="small">Dettaglio</summary><div class="small"><b>Tolti:</b> ${pz.rimossi.map(x => `<code>${esc(x)}</code>`).join(" ") || "nessuno"}<br>
+     <b>Modificati:</b> ${pz.sostituiti.map(x => `<code>${esc(x.file)}</code> (${x.sostituzioni})`).join(" ") || "nessuno"}</div></details></div>` : ""}
+   ${(a.sensibili || []).length ? `<div class="warnbox">File sensibili che verrebbero caricati: ${a.sensibili.map(esc).join(", ")}</div>` : ""}
+   ${(a.grandi || []).length ? `<div class="warnbox">File oltre 95 MB (GitHub li rifiuta): ${a.grandi.map(esc).join(", ")}</div>` : ""}
+   ${trovati.length ? `<h2>Da sistemare</h2><table><tbody>${trovati.slice(0, 200).map(riga).join("")}</tbody></table>` : `<p style="color:var(--ok)">✅ Nessun segreto né dato personale nei file da caricare.</p>`}
+   ${avvisi.length ? `<details><summary class="small">⚪ ${avvisi.length} avvisi (email di lavoro, indirizzi IP): controlla che vadano bene</summary><table><tbody>${avvisi.slice(0, 200).map(riga).join("")}</tbody></table></details>` : ""}
+   <details><summary class="small">📄 File che verrebbero caricati (${a.n_file ?? 0})</summary><pre class="small" style="max-height:220px;overflow:auto">${(a.file || []).map(esc).join("\n")}</pre></details>
+   <div class="row" style="margin-top:12px"><label style="margin:0;font-size:14px;color:var(--ink)"><input type="checkbox" id="d-pul" ${p.pulisci ? "checked" : ""}> 🧹 Pulisci</label>
+     <button class="sec" id="d-ana">🔄 Rianalizza</button><button class="sec" id="d-dir">📂 Apri cartella</button>
+     <span class="small muted">Puoi correggere i file a mano nella cartella e poi premere Rianalizza.</span></div>
+   ${r ? `<div class="card"><b>GitHub:</b> <a href="${esc(r.url)}" target="_blank">${esc(r.url)}</a> — ${r.pubblico ? "🌍 pubblico" : "🔒 privato"}
+       ${r.pubblico ? "" : `<div class="row" style="margin:10px 0 0"><button id="d-pubb" ${a.ok_pubblico ? "" : "disabled"}>🌍 Rendi pubblico</button>
+       ${a.ok_pubblico ? "" : `<span class="small muted">Prima togli i dati personali (attiva Pulisci e Rianalizza).</span>`}</div>`}</div>`
+   : `<div class="card"><h2 style="margin-top:0">⬆️ Pubblica su GitHub</h2>
+       <label>Nome del repository</label><input id="d-nome" value="${esc(p.slug)}" style="width:100%">
+       <label>Descrizione</label><input id="d-desc" value="${esc(p.nome)}" style="width:100%">
+       <label style="font-size:14px;color:var(--ink)"><input type="radio" name="vis" value="0" checked> 🔒 Privato (consigliato: lo rendi pubblico dopo)</label>
+       <label style="font-size:14px;color:var(--ink)"><input type="radio" name="vis" value="1" ${a.ok_pubblico ? "" : "disabled"}> 🌍 Pubblico ${a.ok_pubblico ? "" : "— non disponibile: ci sono dati personali o segreti"}</label>
+       <div class="row" style="margin-top:10px"><button id="d-pub" ${a.ok_privato ? "" : "disabled"}>⬆️ Pubblica su GitHub</button>
+       ${a.ok_privato ? "" : `<span class="small" style="color:var(--bad)">Bloccato: attiva Pulisci e premi Rianalizza, oppure correggi i file.</span>`}</div></div>`}
+   <div class="row" style="margin-top:12px;justify-content:space-between"><button class="sec sm" id="d-del">🗑️ Elimina copia locale</button><button class="sec" onclick="closeModal()">Chiudi</button></div>`);
+  const slug = encodeURIComponent(p.slug), box = $("#modal-box");
+  const ricarica = d => go("progetti").then(() => dettaglioProgetto(d));
+  $("#d-ana", box).onclick = e => run(e.target, () => api(`/api/progetti/${slug}/prepara`, {pulisci: $("#d-pul").checked}), "Analisi aggiornata").then(d => d && ricarica(d));
+  $("#d-dir", box).onclick = e => run(e.target, () => api(`/api/progetti/${slug}/cartella`, {}));
+  $("#d-del", box).onclick = e => conferma2(e.target, "Elimino la copia nell'app (GitHub non viene toccato). Clicca di nuovo",
+    () => run(e.target, () => api(`/api/progetti/${slug}`, undefined, "DELETE"), "Copia locale eliminata").then(() => { closeModal(); go("progetti"); }));
+  const pub = $("#d-pub", box);
+  if (pub) pub.onclick = e => {
+    const pubblico = box.querySelector('input[name=vis]:checked').value === "1";
+    conferma2(e.target, `Carico su GitHub come ${pubblico ? "PUBBLICO" : "privato"}? Clicca di nuovo per confermare`,
+      () => run(e.target, () => api(`/api/progetti/${slug}/pubblica`, {conferma: true, pubblico, nome_repo: $("#d-nome").value, descrizione: $("#d-desc").value}),
+        d => "Pubblicato: " + d.repo.url).then(d => d && ricarica(d)));
+  };
+  const pubb = $("#d-pubb", box);
+  if (pubb) pubb.onclick = e => conferma2(e.target, "Diventa visibile a tutti. Clicca di nuovo per confermare",
+    () => run(e.target, () => api(`/api/progetti/${slug}/rendi-pubblico`, {conferma: true}), "Ora è pubblico 🌍").then(d => d && ricarica(d)));
+}
+
 V.impostazioni = async m => {
   await refreshStato(); const s = STATO.impostazioni, c = STATO.credenziali;
   m.innerHTML = `<h1>Impostazioni</h1><p class="sub">Dati salvati in <code>${esc(STATO.cartella_dati)}</code>. Le credenziali vanno nel Gestore credenziali di Windows (cifrate), mai su file.</p>
@@ -369,7 +475,7 @@ V.impostazioni = async m => {
    <div class="card"><h2 style="margin-top:0">🔐 Credenziali</h2>
     ${Object.entries(c).map(([k,v]) => `<label>${esc(v.label)} ${v.impostato ? "✅" : "❌"}</label>
       <input id="c-${k}" type="${k.includes("password") ? "password" : "text"}" value="${esc(v.valore)}" placeholder="${v.impostato && k.includes("password") ? "•••••••• (salvata — scrivi per sostituire)" : ""}" style="width:100%" autocomplete="off">`).join("")}
-    <div class="row" style="margin-top:12px"><button id="save-c">Salva credenziali</button></div>
+    <div class="row" style="margin-top:12px"><button id="save-c">Salva credenziali</button><button class="sec" id="prova-c">🔌 Prova connessione posta</button></div>
     <p class="small muted">Per l'email conviene una "password per app" o una casella con permessi limitati.</p></div>
    <div class="card"><h2 style="margin-top:0">🛡️ Sicurezza invii</h2>
     <label><input type="checkbox" id="s-auto" ${STATO.avvio_automatico ? "checked" : ""}> Avvia con Windows (all'accensione del PC)</label>
@@ -405,6 +511,7 @@ V.impostazioni = async m => {
   <div class="row" style="margin-top:16px"><button id="save-s">💾 Salva impostazioni</button></div>`;
   $("#s-auto").onchange = e => run(null, () => api("/api/avvio-automatico", {attivo: e.target.checked}),
     r => r.attivo ? "Partirà all'accensione del PC" : "Avvio automatico disattivato");
+  $("#prova-c").onclick = e => provaPosta(e.target);
   $("#save-c").onclick = e => { const d = {}; Object.keys(c).forEach(k => { const v = $("#c-" + k).value; if (v !== "" || !k.includes("password")) d[k] = v; });
     run(e.target, () => api("/api/credenziali", d), "Credenziali salvate nel Gestore credenziali di Windows").then(() => go("impostazioni")); };
   $("#save-s").onclick = e => {

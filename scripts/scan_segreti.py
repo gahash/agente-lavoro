@@ -26,7 +26,7 @@ EST_BINARIE = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip",
 PATTERN = {
     "Chiave privata": r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----",
     "OpenAI key": r"sk-(?:proj-)?[A-Za-z0-9_\-]{20,}",
-    "Anthropic key": r"sk-ant-[A-Za-z0-9_\-]{20,}",
+    "LLM API key": r"sk-ant-[A-Za-z0-9_\-]{20,}",
     "Google API key": r"AIza[0-9A-Za-z_\-]{35}",
     "AWS access key": r"AKIA[0-9A-Z]{16}",
     "GitHub token": r"gh[pousr]_[A-Za-z0-9]{36,}",

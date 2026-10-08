@@ -58,14 +58,68 @@ def _corpo(msg: email.message.Message) -> str:
     return re.sub(r"\s+", " ", testo or html).strip()
 
 
-def _imap() -> imaplib.IMAP4_SSL:
-    s = load_settings()
+ERR_LOGIN = ("Il server della posta rifiuta email o password ({server}). Controlla la password della casella "
+             "(su Hostinger: hPanel → Email → {utente} → Cambia password) e reinseriscila in Impostazioni → Credenziali.")
+
+
+def _credenziali() -> tuple[str, str]:
     user, pwd = vault.get_cred("imap_user"), vault.get_cred("imap_password")
     if not user or not pwd:
         raise RuntimeError("Credenziali email mancanti: inseriscile in Impostazioni → Credenziali.")
-    m = imaplib.IMAP4_SSL(s["imap_host"], int(s["imap_port"]), ssl_context=ssl.create_default_context())
-    m.login(user, pwd)
+    return user, pwd
+
+
+def _imap() -> imaplib.IMAP4_SSL:
+    s = load_settings()
+    user, pwd = _credenziali()
+    try:
+        m = imaplib.IMAP4_SSL(s["imap_host"], int(s["imap_port"]), ssl_context=ssl.create_default_context(), timeout=30)
+    except OSError as e:
+        raise RuntimeError(f"Non riesco a raggiungere {s['imap_host']}:{s['imap_port']} ({e}). Controlla server e porta IMAP.")
+    try:
+        m.login(user, pwd)
+    except imaplib.IMAP4.error as e:
+        raise RuntimeError(ERR_LOGIN.format(server=f"IMAP {s['imap_host']}", utente=user)) from e
     return m
+
+
+def _smtp() -> smtplib.SMTP:
+    s = load_settings()
+    user, pwd = _credenziali()
+    host, porta = s["smtp_host"], int(s["smtp_port"])
+    try:
+        if porta == 465:
+            smtp = smtplib.SMTP_SSL(host, porta, context=ssl.create_default_context(), timeout=30)
+        else:                                       # 587: STARTTLS
+            smtp = smtplib.SMTP(host, porta, timeout=30)
+            smtp.starttls(context=ssl.create_default_context())
+    except OSError as e:
+        raise RuntimeError(f"Non riesco a raggiungere {host}:{porta} ({e}). Controlla server e porta SMTP.")
+    try:
+        smtp.login(user, pwd)
+    except smtplib.SMTPAuthenticationError as e:
+        smtp.close()
+        raise RuntimeError(ERR_LOGIN.format(server=f"SMTP {host}", utente=user)) from e
+    return smtp
+
+
+def prova_connessione() -> dict:
+    """Verifica lettura (IMAP) e invio (SMTP) senza leggere né inviare messaggi."""
+    esito = {}
+    for nome, fn in (("imap", _imap), ("smtp", _smtp)):
+        try:
+            c = fn()
+            esito[nome] = {"ok": True}
+            try:
+                c.logout() if nome == "imap" else c.quit()
+            except Exception:
+                pass
+        except Exception as e:
+            esito[nome] = {"ok": False, "errore": str(e)}
+    esito["ok"] = esito["imap"]["ok"] and esito["smtp"]["ok"]
+    db.log("posta", f"Prova connessione: IMAP {'ok' if esito['imap']['ok'] else 'ERRORE'}, "
+                    f"SMTP {'ok' if esito['smtp']['ok'] else 'ERRORE'}", "info" if esito["ok"] else "errore")
+    return esito
 
 
 def classifica_regole(mitt: str, ogg: str, corpo: str, headers: email.message.Message) -> tuple[str | None, str]:
@@ -85,14 +139,19 @@ def classifica_ai(mitt: str, ogg: str, corpo: str) -> tuple[str, str]:
     return (cat if cat in CATEGORIE else "giallo"), str(d.get("motivo", ""))
 
 
-def controlla(giorni: int = 3, max_msg: int = 40, usa_ai: bool = True) -> dict:
+def controlla(giorni: int = 7, max_msg: int = 100, usa_ai: bool = True, max_ai: int = 10) -> dict:
+    """giorni=0 → tutta la casella. L'AI locale (circa 1 minuto a email) classifica al massimo max_ai
+    messaggi per controllo; gli altri restano "da classificare" e si classificano al controllo successivo."""
     m = _imap()
     try:
         m.select("INBOX", readonly=True)
-        since = (date.today() - timedelta(days=giorni)).strftime("%d-%b-%Y")
-        _, ids = m.search(None, f'(SINCE "{since}")')
+        if giorni and giorni > 0:
+            since = (date.today() - timedelta(days=giorni)).strftime("%d-%b-%Y")
+            _, ids = m.search(None, f'(SINCE "{since}")')
+        else:
+            _, ids = m.search(None, "ALL")
         uids = ids[0].split()[-max_msg:]
-        nuovi = opt_out = 0
+        nuovi = opt_out = usati_ai = 0
         ai_ok = usa_ai and llm.disponibile()
         for i in reversed(uids):
             _, data = m.fetch(i, "(BODY.PEEK[] UID)")
@@ -108,7 +167,8 @@ def controlla(giorni: int = 3, max_msg: int = 40, usa_ai: bool = True) -> dict:
             allarmi = safety.segnali_sospetti(f"{ogg} {corpo}")
             cat, motivo = classifica_regole(mitt, ogg, corpo, msg)
             if not cat:
-                if ai_ok:
+                if ai_ok and usati_ai < max_ai:
+                    usati_ai += 1
                     try:
                         cat, motivo = classifica_ai(mitt, ogg, corpo)
                     except llm.LLMError:
@@ -138,8 +198,9 @@ def controlla(giorni: int = 3, max_msg: int = 40, usa_ai: bool = True) -> dict:
             m.logout()
         except Exception:
             pass
-    db.log("posta", f"Controllo posta: {nuovi} nuovi messaggi, {opt_out} opt-out registrati")
-    return {"nuovi": nuovi, "opt_out": opt_out}
+    db.log("posta", f"Controllo posta ({giorni or 'tutti i'} giorni): {len(uids)} nella casella, {nuovi} nuovi, "
+                    f"{usati_ai} classificati con AI, {opt_out} opt-out registrati")
+    return {"nuovi": nuovi, "nella_casella": len(uids), "classificati_ai": usati_ai, "opt_out": opt_out}
 
 
 def _componi(b: dict) -> EmailMessage:
@@ -183,11 +244,7 @@ def invia_approvata(bozza_id: int) -> dict:
         return {"ok": False, "errore": "Il destinatario ha chiesto di non essere contattato (opt-out)."}
     if b["tipo"] == "proposta_pmi" and safety.pmi_quota_residua() <= 0:
         return {"ok": False, "errore": f"Raggiunto il limite di {s['max_pmi_giorno']} nuovi contatti PMI oggi."}
-    user, pwd = vault.get_cred("imap_user"), vault.get_cred("imap_password")
-    if not user or not pwd:
-        return {"ok": False, "errore": "Credenziali email mancanti."}
-    with smtplib.SMTP_SSL(s["smtp_host"], int(s["smtp_port"]), context=ssl.create_default_context()) as smtp:
-        smtp.login(user, pwd)
+    with _smtp() as smtp:
         smtp.send_message(_componi(b))
     esito = "inviato"
     db.log("posta", f"Inviata bozza {bozza_id} a {dest}")

@@ -23,6 +23,10 @@ from ..core import db
 from ..core.config import BROWSER_PROFILE, load_settings
 
 PORTA = 9333
+# Chrome congela le schede in secondo piano: una scheda congelata blocca il collegamento di Playwright
+FLAG_NO_CONGELA = ["--disable-renderer-backgrounding", "--disable-background-timer-throttling",
+                   "--disable-backgrounding-occluded-windows",
+                   "--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,HighEfficiencyModeAvailable"]
 
 
 def trova_browser() -> str | None:
@@ -44,7 +48,8 @@ def comando_browser(url: str = "") -> list[str]:
     if not exe:
         raise RuntimeError("Chrome/Edge non trovato sul computer.")
     cmd = [exe, f"--user-data-dir={BROWSER_PROFILE}", f"--remote-debugging-port={PORTA}",
-           "--remote-debugging-address=127.0.0.1", "--no-first-run", "--no-default-browser-check", "--start-maximized"]
+           "--remote-debugging-address=127.0.0.1", "--no-first-run", "--no-default-browser-check", "--start-maximized",
+           *FLAG_NO_CONGELA]
     return cmd + ([url] if url else [])
 
 
@@ -65,6 +70,57 @@ def avvia_browser(url: str = "") -> None:
             return
         time.sleep(0.5)
     raise RuntimeError("Chrome non risponde. Se il profilo dell'app è già aperto senza collegamento, chiudilo e riprova.")
+
+
+def schede_bloccate(attesa: float = 6.0, ripara: bool = False) -> list[str]:
+    """Trova le schede che non rispondono (una sola basta a bloccare Playwright mentre si collega).
+    Con ripara=True le riapre: nuova scheda allo stesso indirizzo, poi chiude quella bloccata."""
+    try:
+        import json
+        from websockets.sync.client import connect
+        ws_url = httpx.get(f"http://127.0.0.1:{PORTA}/json/version", timeout=3).json()["webSocketDebuggerUrl"]
+        out = []
+        with connect(ws_url, max_size=None, open_timeout=5) as ws:
+            n = 0
+
+            def call(method, params=None, sid=None):
+                nonlocal n
+                n += 1
+                msg = {"id": n, "method": method, "params": params or {}}
+                if sid:
+                    msg["sessionId"] = sid
+                ws.send(json.dumps(msg))
+                fine = time.time() + attesa
+                while time.time() < fine:
+                    r = json.loads(ws.recv(timeout=max(0.1, fine - time.time())))
+                    if r.get("id") == n:
+                        return r
+                raise TimeoutError
+            for t in call("Target.getTargets")["result"]["targetInfos"]:
+                if t["type"] != "page":
+                    continue
+                try:
+                    sid = call("Target.attachToTarget", {"targetId": t["targetId"], "flatten": True})["result"]["sessionId"]
+                    call("Runtime.evaluate", {"expression": "1"}, sid)
+                    call("Target.detachFromTarget", {"sessionId": sid})
+                except Exception:
+                    out.append(f"\"{t.get('title') or t['url']}\"")
+                    if ripara:                         # comandi a livello di browser: funzionano anche se la scheda è congelata
+                        call("Target.createTarget", {"url": t["url"]})
+                        call("Target.closeTarget", {"targetId": t["targetId"]})
+        if out:
+            db.log("browser", ("Schede riaperte: " if ripara else "Schede bloccate: ") + ", ".join(out))
+        return out
+    except Exception:
+        return []
+
+
+def ripara() -> dict:
+    if not _cdp_attivo():
+        return {"ok": True, "riparate": [], "messaggio": "Il Chrome dell'app non è aperto: niente da riparare."}
+    r = schede_bloccate(ripara=True)                   # CDP diretto: non passa dal thread di Playwright
+    return {"ok": True, "riparate": r,
+            "messaggio": f"Riaperte {len(r)} schede bloccate: {', '.join(r)}" if r else "Nessuna scheda bloccata ✅"}
 
 
 class _Worker:
@@ -114,7 +170,14 @@ class _Worker:
             return self.ctx
         self.scollega()
         avvia_browser()
-        self.browser = self.pw.chromium.connect_over_cdp(f"http://127.0.0.1:{PORTA}")
+        try:
+            self.browser = self.pw.chromium.connect_over_cdp(f"http://127.0.0.1:{PORTA}", timeout=30000)
+        except Exception as e:
+            bloccate = schede_bloccate()
+            if bloccate:
+                raise RuntimeError("Una scheda di Chrome non risponde e blocca il collegamento: "
+                                   + ", ".join(bloccate) + ". Chiudila (o ricaricala con F5) nel Chrome dell'app e riprova.") from e
+            raise RuntimeError("Non riesco a collegarmi al Chrome dell'app. Chiudi Chrome (Agente Lavoro) e riprova.") from e
         self.ctx = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
         return self.ctx
 

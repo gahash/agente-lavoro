@@ -13,7 +13,7 @@ Dimostrare in modo affidabile la filiera "produttore → dati verificati → cer
 oggi molti passaggi manuali e dati difficili da controllare.
 
 ## La soluzione
-- **Agente AI di acquisizione** (Claude): analizza i produttori, assegna un punteggio e prepara bozze di contatto — **mai inviate in automatico**, sempre revisione umana.
+- **Agente AI di acquisizione** (LLM): analizza i produttori, assegna un punteggio e prepara bozze di contatto — **mai inviate in automatico**, sempre revisione umana.
 - **Motore di verifica**: importa letture di produzione, calcola impronte (hash) e rileva anomalie; un agente AI spiega l'esito all'operatore.
 - **Marketplace simulato** con abbinamento domanda/offerta.
 - **Wallet dimostrativo con regole di sicurezza**: limiti, approvazione umana prima di ogni operazione.
@@ -25,7 +25,7 @@ oggi molti passaggi manuali e dati difficili da controllare.
 flowchart LR
     UI[Web app React] --> API[API Node.js/Express]
     API --> CORE[Logica di dominio condivisa]
-    API --> AG[Agenti AI - Claude]
+    API --> AG[Agenti AI - LLM]
     API --> POL[Policy engine wallet]
     POL --> BC[Adattatore blockchain]
     BC --> SC[Smart contract - testnet]
@@ -36,7 +36,7 @@ flowchart LR
 | Livello | Tecnologie |
 |---|---|
 | Linguaggio | TypeScript (monorepo npm workspaces) |
-| API | Node.js 22, Express 5, Zod, ethers.js v6, Anthropic SDK |
+| API | Node.js 22, Express 5, Zod, ethers.js v6, SDK LLM |
 | Web | React 19, Vite, Tailwind 4 |
 | Blockchain | Solidity 0.8, Hardhat, OpenZeppelin 5, testnet Sepolia |
 | Test | node:test, test Hardhat |

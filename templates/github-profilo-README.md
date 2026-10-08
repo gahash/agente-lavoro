@@ -5,7 +5,7 @@
 Costruisco software che fa risparmiare tempo alle aziende: automazioni WhatsApp, assistenti e agenti vocali AI,
 CRM e gestionali su misura, integrazioni tra sistemi esistenti.
 
-**Stack:** Python · Node.js · PHP · React Native / Expo · Docker · LLM (OpenAI / Claude) · {{altro}}
+**Stack:** Python · Node.js · PHP · React Native / Expo · Docker · LLM (OpenAI, Ollama) · {{altro}}
 
 #### 📌 Progetti in evidenza
 I miei prodotti commerciali hanno il codice privato: qui trovi le **schede vetrina** con architettura, screenshot e demo.

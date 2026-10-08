@@ -46,4 +46,4 @@ vetrine/             repo vetrina generati (locali finché non approvati)
 | 7 — Test e sicurezza | ⏳ |
 
 > Nota: il prompt originale prevede cron/systemd su Ubuntu; questo PC è Windows 11, quindi la pianificazione
-> userà l'Utilità di pianificazione (o task programmati di Claude) — da confermare.
+> userà l'Utilità di pianificazione — da confermare.
