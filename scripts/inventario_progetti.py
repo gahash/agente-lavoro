@@ -96,7 +96,7 @@ def analizza(p: Path, max_file=40000) -> dict:
                 for k, lab in (("react", "React"), ("next", "Next.js"), ("vue", "Vue"), ("express", "Express"),
                                ("laravel/framework", "Laravel"), ("whatsapp-web.js", "WhatsApp"),
                                ("@whiskeysockets/baileys", "WhatsApp"), ("openai", "OpenAI"),
-                               ("@anthropic-ai/sdk", "LLM API"), ("twilio", "Twilio"), ("expo", "Expo"),
+                               ("twilio", "Twilio"), ("expo", "Expo"),
                                ("electron", "Electron"), ("mysql2", "MySQL"), ("mongoose", "MongoDB"),
                                ("pg", "PostgreSQL"), ("socket.io", "Socket.io")):
                     if k in deps:
