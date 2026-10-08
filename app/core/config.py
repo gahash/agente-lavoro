@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "Agente Lavoro"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 if getattr(sys, "frozen", False):          # eseguibile
     BASE = Path(sys.executable).resolve().parent
