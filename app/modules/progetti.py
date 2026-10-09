@@ -216,8 +216,9 @@ def _rimuovi(p: Path) -> None:
 
 
 def _cmd(args: list[str], cwd: Path | None = None, timeout: int = 600) -> subprocess.CompletedProcess:
+    # stdin=DEVNULL: nell'exe senza console l'input ereditato non è valido e gh/git possono fallire
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=timeout, creationflags=NO_WINDOW)
+                          stdin=subprocess.DEVNULL, timeout=timeout, creationflags=NO_WINDOW)
 
 
 def _git() -> str:
@@ -530,7 +531,9 @@ def _identita_github() -> dict:
     gh = _gh()
     r = _cmd([gh, "api", "user", "--jq", "{login: .login, id: .id, name: .name}"], timeout=60)
     if r.returncode:
-        raise RuntimeError("GitHub non è collegato: apri un terminale e lancia  gh auth login --web")
+        dettaglio = (r.stderr or r.stdout).strip().splitlines()[-1:] or [f"codice {r.returncode}"]
+        raise RuntimeError("GitHub non è collegato: apri un terminale e lancia  gh auth login --web"
+                           f"  (dettaglio: {dettaglio[0]})")
     u = json.loads(r.stdout)
     # email "noreply" di GitHub: la tua email vera non finisce nei commit pubblici
     u["email"] = f"{u['id']}+{u['login']}@users.noreply.github.com"
