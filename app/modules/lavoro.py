@@ -23,15 +23,44 @@ def _testo(h: str) -> str:
     return re.sub(r"\s+", " ", BeautifulSoup(h or "", "html.parser").get_text(" ")).strip()
 
 
+_CP1252 = "ŒœŠšŸŽžƒˆ˜–—‘-„†-•…‰‹›€™"
+_MOJIBAKE = re.compile(f"[Â-ô][\u0080-¿{_CP1252}]+")
+
+
+def _byte(ch: str) -> bytes:
+    try:
+        return ch.encode("cp1252")
+    except UnicodeError:
+        return ch.encode("latin-1")          # byte non definiti in cp1252 (es. \x8d) restano come Latin-1
+
+
+def _ripara(s: str | None) -> str:
+    """Remote OK manda testi UTF-8 decodificati come cp1252 (es. 'grabaciÃ³n'): ripara ogni pezzo rovinato."""
+    s = s or ""
+
+    def fix(m: re.Match) -> str:
+        try:
+            return b"".join(_byte(c) for c in m.group(0)).decode("utf-8")
+        except UnicodeError:
+            return m.group(0)
+    for _ in range(3):                      # alcuni testi sono codificati male più volte
+        nuovo = _MOJIBAKE.sub(fix, s)
+        if nuovo == s:
+            break
+        s = nuovo
+    return re.sub(r"Â(?=\s|$)", "", s)      # spazio non separabile perso: resta solo la 'Â'
+
+
 # ---------------- fonti ----------------
 def fonte_remoteok() -> list[dict]:
     r = httpx.get("https://remoteok.com/api", headers=UA, timeout=30)
     out = []
     for j in r.json()[1:]:
-        out.append({"fonte": "Remote OK", "uid": f"rok-{j.get('id')}", "azienda": j.get("company"),
-                    "ruolo": j.get("position"), "link": j.get("url"), "remoto": "Sì (100%)",
+        out.append({"fonte": "Remote OK", "uid": f"rok-{j.get('id')}", "azienda": _ripara(j.get("company")),
+                    "ruolo": _ripara(j.get("position")), "link": j.get("url"), "remoto": "Sì (100%)",
                     "compenso": f"{j.get('salary_min') or ''}-{j.get('salary_max') or ''} USD".strip("- USD"),
-                    "requisiti": ", ".join(j.get("tags") or []), "descrizione": _testo(j.get("description"))[:3000],
+                    "requisiti": ", ".join(j.get("tags") or []),
+                    "descrizione": _ripara(_testo(j.get("description")))[:3000],
                     "tipo": "", "contatto": ""})
     return out
 
