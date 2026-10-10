@@ -13,9 +13,9 @@ jobs:
   build:
     runs-on: macos-15-intel
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -37,7 +37,7 @@ jobs:
           kill $PID 2>/dev/null || true
           sqlite3 "$DB" "select 1 from eventi where messaggio like 'Avviata su%'" | grep -q 1
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: AgenteLavoro-macos-intel
           path: release/*.dmg

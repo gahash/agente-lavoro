@@ -13,7 +13,7 @@ ARCH=$(uname -m)                       # x86_64 su iMac Intel
 
 "$PY" -m PyInstaller --noconfirm --clean --windowed \
   --name "AgenteLavoro" \
-  --icon "build/icona.ico" \
+  --icon "$PWD/build/icona.ico" \
   --osx-bundle-identifier "it.gasparepettinati.agentelavoro" \
   --distpath dist --workpath build/tmp --specpath build/tmp \
   --add-data "$PWD/app/ui:ui" \
