@@ -1,0 +1,24 @@
+AGENTE LAVORO per Mac (Intel)
+=============================
+
+INSTALLAZIONE
+1. Trascina "Agente Lavoro" sulla cartella "Applicazioni".
+2. La prima volta macOS blocca l'app perche' non e' firmata con un certificato Apple:
+   - apri l'app con doppio clic e chiudi l'avviso;
+   - vai in Impostazioni di Sistema > Privacy e sicurezza;
+   - in fondo, accanto a "Agente Lavoro", clicca "Apri comunque" e conferma.
+   Dalle volte successive si apre normalmente.
+
+SERVE ANCHE
+- Ollama (il modello AI locale): scaricalo da https://ollama.com/download/mac,
+  poi nel Terminale:   ollama pull llama3.1:8b
+- Google Chrome (per LinkedIn, Indeed, gestionale e "Analizza pagina").
+
+DATI E PASSWORD
+- I dati stanno in:  la tua cartella utente / AgenteLavoro / dati
+  (per spostarli dal PC Windows copia quella cartella: C:\Users\<nome>\AgenteLavoro\dati).
+- Le password (email) stanno nel Portachiavi di macOS: reinseriscile in Impostazioni dell'app.
+  Al primo accesso macOS puo' chiedere il permesso di usare il Portachiavi: scegli "Consenti sempre".
+
+AVVIO AUTOMATICO
+- Si attiva da Impostazioni dell'app: l'app parte quando accedi al Mac.

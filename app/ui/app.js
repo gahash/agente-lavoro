@@ -398,7 +398,7 @@ V.progetti = async m => {
     <div class="row" style="margin:0"><input type="file" id="zip" accept=".zip,application/zip">
       <label style="margin:0;font-size:14px;color:var(--ink)"><input type="checkbox" id="pul"> 🧹 <b>Pulisci</b> (toglie segreti, dati personali, .env, database, log, node_modules…)</label>
       <button id="up">⬆️ Carica e controlla</button></div>
-    <p class="small muted" style="margin-bottom:0">Lo ZIP resta sul PC (in ${esc(STATO.cartella_dati)}\\progetti). La cronologia git dentro lo ZIP non viene mai caricata.</p></div>
+    <p class="small muted" style="margin-bottom:0">Lo ZIP resta sul computer (cartella <code>progetti</code> dentro ${esc(STATO.cartella_dati)}). La cronologia git dentro lo ZIP non viene mai caricata.</p></div>
   <table><thead><tr><th>Progetto</th><th>Caricato</th><th>File</th><th>Controllo</th><th>GitHub</th><th></th></tr></thead><tbody>
   ${lista.map(p => { const a = p.riassunto || {}; return `<tr><td><b>${esc(p.nome)}</b><div class="small muted">${esc(p.file_zip)}${p.pulisci ? " · 🧹 pulito" : ""}</div></td>
     <td class="small">${dt(p.caricato)}</td><td class="small">${a.n_file ?? "–"} file<br>${a.peso_mb ?? "–"} MB</td>

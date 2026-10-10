@@ -652,8 +652,8 @@ def elimina(slug: str) -> dict:
 
 def apri_cartella(slug: str) -> dict:
     d = _dir(slug) / "codice"
-    if hasattr(os, "startfile"):
-        os.startfile(d)
+    from .sistema import apri
+    apri(d)
     return {"ok": True, "cartella": str(d)}
 
 

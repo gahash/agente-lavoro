@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 APP_NAME = "Agente Lavoro"
@@ -91,20 +93,44 @@ DEFAULTS: dict = {
 }
 
 
+class SettingsError(RuntimeError):
+    pass
+
+
 def load_settings() -> dict:
     s = dict(DEFAULTS)
     if SETTINGS_FILE.exists():
         try:
-            s.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
-        except Exception:
-            pass
+            saved = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as e:
+            raise SettingsError(f"Impossibile leggere le impostazioni da {SETTINGS_FILE}: {e}") from e
+        if not isinstance(saved, dict):
+            raise SettingsError(f"Il file delle impostazioni {SETTINGS_FILE} deve contenere un oggetto JSON.")
+        s.update({k: v for k, v in saved.items() if k in DEFAULTS})
     return s
 
 
 def save_settings(new: dict) -> dict:
+    if not isinstance(new, dict):
+        raise SettingsError("Le impostazioni devono essere un oggetto.")
     s = load_settings()
     for k, v in new.items():
         if k in DEFAULTS:
             s[k] = v
-    SETTINGS_FILE.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=SETTINGS_FILE.parent, prefix=f".{SETTINGS_FILE.name}.", delete=False
+        ) as f:
+            temp_path = Path(f.name)
+            json.dump(s, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+            f.flush()
+            os.fsync(f.fileno())
+        temp_path.replace(SETTINGS_FILE)
+    except (OSError, TypeError, ValueError) as e:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise SettingsError(f"Impossibile salvare le impostazioni in {SETTINGS_FILE}: {e}") from e
     return s

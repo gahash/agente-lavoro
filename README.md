@@ -26,11 +26,26 @@ vetrine/             repo vetrina generati (locali finché non approvati)
 ```
 
 ## Comandi
-```bash
+```powershell
 .venv\Scripts\python scripts\inventario_progetti.py          # inventario progetti (sola lettura)
 .venv\Scripts\python scripts\scan_segreti.py <cartella> --storia   # scansione segreti mascherata
 .venv\Scripts\python scripts\crea_pipeline.py                 # crea data/pipeline.xlsx
 .venv\Scripts\python scripts\punteggio_annuncio.py            # punteggio 1-10 di un annuncio
+```
+
+## Sviluppo
+Richiede Python 3.11 su Windows.
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m app.main
+```
+
+Eseguire i test automatici:
+
+```powershell
+.venv\Scripts\python -m unittest discover -s tests -v
 ```
 
 ## Fasi

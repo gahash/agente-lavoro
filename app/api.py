@@ -1,8 +1,8 @@
 """API locale (solo 127.0.0.1) usata dall'interfaccia."""
 from __future__ import annotations
 
-import os
 import secrets
+from pathlib import Path
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
@@ -229,7 +229,7 @@ def pipe_follow(pid: int):
 @app.post("/api/export", dependencies=A)
 def export():
     f = ok(report.esporta_excel)
-    os.startfile(f) if hasattr(os, "startfile") else None
+    sistema.apri(f)
     return {"file": f}
 
 
@@ -451,6 +451,11 @@ def progetti_elimina(slug: str):
 
 @app.get("/api/file", dependencies=A)
 def apri_file(percorso: str):
-    if not os.path.abspath(percorso).startswith(str(DATA)):
-        raise HTTPException(403)
-    return FileResponse(percorso)
+    try:
+        file_path = Path(percorso).resolve()
+        file_path.relative_to(DATA.resolve())
+    except (OSError, RuntimeError, ValueError):
+        raise HTTPException(403, "File non accessibile")
+    if not file_path.is_file():
+        raise HTTPException(404, "File non trovato")
+    return FileResponse(file_path)

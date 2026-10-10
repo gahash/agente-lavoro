@@ -12,6 +12,7 @@ import os
 import queue
 import re
 import subprocess
+import sys
 import threading
 import time
 from concurrent.futures import Future
@@ -32,11 +33,16 @@ FLAG_NO_CONGELA = ["--disable-renderer-backgrounding", "--disable-background-tim
 def trova_browser() -> str | None:
     canale = load_settings().get("browser_canale", "chrome")
     pf, pf86, local = os.environ.get("ProgramFiles", ""), os.environ.get("ProgramFiles(x86)", ""), os.environ.get("LOCALAPPDATA", "")
-    candidati = {
-        "chrome": [rf"{pf}\Google\Chrome\Application\chrome.exe", rf"{pf86}\Google\Chrome\Application\chrome.exe",
-                   rf"{local}\Google\Chrome\Application\chrome.exe"],
-        "msedge": [rf"{pf86}\Microsoft\Edge\Application\msedge.exe", rf"{pf}\Microsoft\Edge\Application\msedge.exe"],
-    }
+    if sys.platform == "darwin":
+        app = lambda nome: [f"/Applications/{nome}.app/Contents/MacOS/{nome}",
+                            str(Path.home() / f"Applications/{nome}.app/Contents/MacOS/{nome}")]
+        candidati = {"chrome": app("Google Chrome"), "msedge": app("Microsoft Edge")}
+    else:
+        candidati = {
+            "chrome": [rf"{pf}\Google\Chrome\Application\chrome.exe", rf"{pf86}\Google\Chrome\Application\chrome.exe",
+                       rf"{local}\Google\Chrome\Application\chrome.exe"],
+            "msedge": [rf"{pf86}\Microsoft\Edge\Application\msedge.exe", rf"{pf}\Microsoft\Edge\Application\msedge.exe"],
+        }
     for p in candidati.get(canale, []) + candidati["chrome"] + candidati["msedge"]:
         if p and Path(p).exists():
             return p
@@ -64,7 +70,11 @@ def avvia_browser(url: str = "") -> None:
     """Apre il Chrome dell'app (se non è già aperto)."""
     if _cdp_attivo():
         return
-    subprocess.Popen(comando_browser(url), creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+    if sys.platform == "win32":
+        subprocess.Popen(comando_browser(url), creationflags=subprocess.DETACHED_PROCESS)
+    else:                                   # macOS: Chrome resta aperto anche se l'app si chiude
+        subprocess.Popen(comando_browser(url), start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for _ in range(60):
         if _cdp_attivo():
             return

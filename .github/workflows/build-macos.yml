@@ -1,0 +1,49 @@
+name: Build macOS (Intel)
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+    branches: ["mac/**"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Crea app e disco di installazione
+        run: PY=python bash build/build_mac.sh
+
+      - name: Prova di avvio (l'app parte e il server risponde)
+        run: |
+          "dist/Agente Lavoro.app/Contents/MacOS/AgenteLavoro" > avvio.log 2>&1 &
+          PID=$!
+          DB=~/AgenteLavoro/dati/agente.db
+          for i in $(seq 1 90); do
+            if [ -f "$DB" ] && sqlite3 "$DB" "select 1 from eventi where messaggio like 'Avviata su%'" | grep -q 1; then
+              echo "avviata dopo ${i}s"; break
+            fi
+            sleep 1
+          done
+          sqlite3 "$DB" "select quando, modulo, messaggio from eventi order by id" || true
+          kill $PID 2>/dev/null || true
+          sqlite3 "$DB" "select 1 from eventi where messaggio like 'Avviata su%'" | grep -q 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AgenteLavoro-macos-intel
+          path: release/*.dmg
+
+      - name: Allega il .dmg alla release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*.dmg
