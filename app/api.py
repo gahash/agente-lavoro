@@ -38,6 +38,8 @@ def ok(fn, *a, **kw):
 @app.get("/", response_class=HTMLResponse)
 def index():
     html = (UI_DIR / "index.html").read_text(encoding="utf-8")
+    for f in ("style.css", "app.js"):           # versione = data del file: il browser non usa copie vecchie
+        html = html.replace(f"/ui/{f}", f"/ui/{f}?v={int((UI_DIR / f).stat().st_mtime)}")
     return html.replace("__TOKEN__", TOKEN).replace("__VERSION__", VERSION)
 
 
