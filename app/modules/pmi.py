@@ -123,7 +123,7 @@ def analizza(az_id: int) -> dict:
            "{\"analisi\": \"2-3 righe concrete basate SOLO su ciò che vedi\", \"servizio\": \"il servizio più adatto\", "
            "\"interesse\": numero 1-10}")
     try:
-        d = llm.chat_json(sys, f"Azienda: {a['nome']} ({a['settore']}). Segnali: {', '.join(segnali)}\n" + llm.dati(testo, 3500),
+        d = llm.chat_json(sys, f"Azienda: {a['nome']} ({a['settore']}). Segnali: {', '.join(segnali)}\n" + llm.dati(testo, 1800),
                           max_tokens=300)
         analisi = f"{d.get('analisi', '')} [interesse {d.get('interesse', '?')}/10]"
         servizio = d.get("servizio") or a["servizio"]
