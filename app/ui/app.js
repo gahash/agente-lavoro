@@ -362,8 +362,7 @@ V.agenda = async m => {
     <p class="small muted">Finiscono da soli nei follow-up e al posto di [ORARI] nelle risposte. Per fissarne uno: Pipeline → 📅 Fissa.</p></div></div>`;
   $("#prom").onclick = e => run(e.target, () => api("/api/agenda/promemoria", {}), r => `Promemoria inviati: ${r.inviati}`);
   $("#inv").onclick = e => run(e.target, () => api("/api/invio-approvate", {}), r => `Inviate: ${r.inviate}` + (r.non_inviate.length ? ` — non inviate: ${r.non_inviate.length} (vedi Registro)` : "")).then(refreshStato);
-  $("#caccia").onclick = e => run(e.target, () => api("/api/caccia", {}),
-    r => `${r.nuove_aziende} aziende nuove, ${r.analizzate} analizzate, ${r.proposte} proposte e ${r.candidature} candidature in Da approvare`).then(refreshStato);
+  $("#caccia").onclick = e => run(e.target, () => api("/api/caccia", {}), "Ricerca clienti avviata: segui la barra in basso a destra").then(controllaCaccia);
   $("#gest").onclick = e => { e.preventDefault(); api("/api/browser/apri", {url: s.crm_url_lead + "index.php?tab=appuntamenti"}).catch(err => toast(err.message, true)); };
 };
 
@@ -653,3 +652,34 @@ setInterval(async () => {
   } catch {}
 }, 30000);
 aggiornaBadgeTodo().catch(() => {});
+
+// ------------------------------------------------------------------ barra della ricerca clienti
+const FASE = {ricerca: "Cerco aziende", analisi: "Analizzo i siti", proposte: "Scrivo le proposte", candidature: "Scrivo le candidature"};
+const minuti = s => { const m = Math.floor((Date.now() - new Date(s)) / 60000); return m < 1 ? "meno di un minuto" : m === 1 ? "1 minuto" : `${m} minuti`; };
+let cacciaTimer = null, cacciaVista = false;
+async function controllaCaccia() {
+  clearTimeout(cacciaTimer);
+  let st = null;
+  try { st = await api("/api/caccia/stato"); } catch {}
+  const bar = $("#caccia-bar");
+  if (st && st.attivo) {
+    cacciaVista = true;
+    bar.classList.remove("hidden", "fine");
+    $("#cb-titolo").textContent = "🎯 Ricerca clienti — " + (FASE[st.fase] || "in corso");
+    $("#cb-perc").textContent = st.percentuale + "%";
+    $("#cb-fill").style.width = st.percentuale + "%";
+    $("#cb-det").textContent = `${st.dettaglio} · da ${minuti(st.passo_dal)} (l'AI locale può richiedere alcuni minuti per passo)`;
+  } else if (st && cacciaVista && st.ultimo_esito) {
+    cacciaVista = false;
+    const r = st.ultimo_esito;
+    bar.classList.remove("hidden"); bar.classList.add("fine");
+    $("#cb-titolo").textContent = r.ok === false ? "⚠️ Ricerca clienti interrotta" : "✅ Ricerca clienti completata";
+    $("#cb-perc").textContent = "100%"; $("#cb-fill").style.width = "100%";
+    $("#cb-det").textContent = r.ok === false ? r.errore :
+      `${r.nuove_aziende} aziende nuove, ${r.analizzate} siti analizzati, ${r.proposte} proposte e ${r.candidature} candidature in Da approvare.`;
+    refreshStato().catch(() => {});
+    setTimeout(() => bar.classList.add("hidden"), 30000);
+  }
+  cacciaTimer = setTimeout(controllaCaccia, st && st.attivo ? 3000 : 20000);
+}
+controllaCaccia();

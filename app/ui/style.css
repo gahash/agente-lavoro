@@ -61,3 +61,14 @@ tr:hover td{background:color-mix(in srgb,var(--acc) 5%,transparent)}
 .chatbar{display:flex;gap:8px;padding-top:10px}.chatbar textarea{min-height:52px;height:52px;flex:1}
 .sugg{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
 .warnbox{background:#fef3c7;color:#78350f;border:1px solid #fcd34d;border-radius:8px;padding:10px 12px;margin-bottom:12px}
+
+/* barra di avanzamento della ricerca clienti */
+.caccia-bar{position:fixed;right:20px;bottom:20px;width:min(380px,calc(100vw - 40px));background:var(--panel);color:var(--ink);
+  border:1px solid var(--line);border-radius:var(--r);box-shadow:0 8px 24px rgba(0,0,0,.18);padding:12px 14px;z-index:40}
+.caccia-bar.hidden{display:none}
+.cb-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.cb-top span{font-variant-numeric:tabular-nums;font-weight:700;color:var(--acc)}
+.cb-track{height:8px;background:var(--line);border-radius:99px;overflow:hidden}
+.cb-fill{height:100%;width:0;background:var(--acc);border-radius:99px;transition:width .6s ease}
+.caccia-bar.fine .cb-fill{background:var(--ok)}
+.cb-det{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.4}

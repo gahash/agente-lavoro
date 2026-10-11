@@ -254,7 +254,12 @@ def agenda_promemoria():
 
 @app.post("/api/caccia", dependencies=A)
 def caccia_ora():
-    return ok(caccia.giro)
+    return caccia.avvia_in_background()
+
+
+@app.get("/api/caccia/stato", dependencies=A)
+def caccia_stato():
+    return caccia.STATO
 
 
 @app.post("/api/invio-approvate", dependencies=A)
