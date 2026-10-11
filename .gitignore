@@ -49,3 +49,10 @@ docs/checklist-github-sicurezza.md
 templates/messaggi.md
 release/
 build/dmg/
+backups/
+
+# Ambiente Mac, app locale e note interne
+.venv-mac/
+Agente Lavoro.app/
+docs/FASE-0.md
+scripts/pubblica_github.sh

@@ -303,8 +303,18 @@ def leggi_tabelle(url: str | None = None) -> dict:
         return {"ok": True, "url": p.url, "titolo": p.title(), "tabelle": tabelle, "menu": _menu(p)}
     r = W.run(f)
     if r.get("ok"):
-        for t in r["tabelle"]:
-            for riga in t["righe"]:
-                rec = dict(zip(t["intestazioni"] or [f"col{i}" for i in range(len(riga))], riga))
-                db.insert("lead_crm", {"uid": f"{r['url']}|{'|'.join(riga[:3])}", "dati": db.dumps(rec), "letto": db.now()})
+        salva_tabelle(r["url"], r["tabelle"])
     return r
+
+
+def salva_tabelle(url: str, tabelle: list[dict]) -> int:
+    """Salva le righe delle tabelle del gestionale (dal browser dell'app o dal segnalibro del tuo Chrome)."""
+    n = 0
+    for t in tabelle:
+        intest = [str(x)[:100] for x in (t.get("intestazioni") or [])]
+        for riga in (t.get("righe") or [])[:500]:
+            riga = [str(x)[:200] for x in riga]
+            rec = dict(zip(intest or [f"col{i}" for i in range(len(riga))], riga))
+            n += bool(db.insert("lead_crm", {"uid": f"{url}|{'|'.join(riga[:3])}", "dati": db.dumps(rec), "letto": db.now()}))
+    db.log("crm", f"Gestionale: {n} righe nuove da {url[:120]}")
+    return n

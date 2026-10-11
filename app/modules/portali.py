@@ -171,20 +171,26 @@ def importa_pagina() -> dict:
             return {"ok": False, "errore": f"{'LinkedIn' if portale == 'linkedin' else 'Indeed'} chiede l'accesso: "
                                            "premi 'Collega / apri' e accedi una volta."}
         filtro_remoto = "f_WT=2" in url or "DSQF7" in url     # ricerca già filtrata "da remoto"
-        return {"ok": True, "portale": portale, "cards": cards, "filtro_remoto": filtro_remoto}
+        return {"ok": True, "portale": portale, "cards": cards, "filtro_remoto": filtro_remoto, "url": url}
     r = W.run(f, timeout=240)
     if not r.get("ok"):
         return r
+    return salva_cards(r["portale"], r["cards"], r.get("url", ""), r["filtro_remoto"])
+
+
+def salva_cards(portale: str, cards: list[dict], url: str = "", filtro_remoto: bool | None = None) -> dict:
+    """Salva gli annunci letti da una pagina di ricerca (dal browser dell'app o dal segnalibro del tuo Chrome)."""
+    if filtro_remoto is None:
+        filtro_remoto = "f_WT=2" in url or "DSQF7" in url
     s = load_settings()
     nuovi = 0
-    for c in r["cards"]:
-        portale = r["portale"]
+    for c in cards:
         link = (f"https://www.linkedin.com/jobs/view/{c['id']}/" if portale == "linkedin"
                 else f"https://it.indeed.com/viewjob?jk={c['id']}")
         testo = f"{c.get('luogo', '')} {c.get('extra', '')}"
         # le ricerche sono già filtrate sull'Italia: "remoto" qui vuol dire remoto dall'Italia
         luogo = c.get("luogo") or "Italia"
-        remoto = (f"Sì (Italia · {luogo})" if (r["filtro_remoto"] or REMOTO_RX.search(testo)) else f"No ({luogo})")
+        remoto = (f"Sì (Italia · {luogo})" if (filtro_remoto or REMOTO_RX.search(testo)) else f"No ({luogo})")
         o = {"fonte": PORTALI[portale]["nome"], "uid": f"{portale}-{c['id']}", "azienda": c.get("azienda", ""),
              "ruolo": c["ruolo"], "link": link, "remoto": remoto, "compenso": c.get("compenso", ""), "tipo": "",
              "requisiti": "", "descrizione": c.get("extra", ""), "contatto": ""}
@@ -194,8 +200,8 @@ def importa_pagina() -> dict:
         o.update({"punteggio": 0 if sosp else p, "sospetto": 1 if sosp else 0,
                   "motivazione": ("SOSPETTO: " + ", ".join(sosp)) if sosp else "; ".join(motivi)})
         nuovi += bool(db.insert("opportunita", o))
-    db.log("portali", f"{PORTALI[r['portale']]['nome']}: {len(r['cards'])} annunci letti, {nuovi} nuovi")
-    return {"ok": True, "portale": PORTALI[r["portale"]]["nome"], "letti": len(r["cards"]), "nuovi": nuovi}
+    db.log("portali", f"{PORTALI[portale]['nome']}: {len(cards)} annunci letti, {nuovi} nuovi")
+    return {"ok": True, "portale": PORTALI[portale]["nome"], "letti": len(cards), "nuovi": nuovi}
 
 
 def cerca_e_importa(portale: str, parole: str) -> dict:

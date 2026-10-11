@@ -155,6 +155,11 @@ CONTROLLI: dict[str, tuple[str, re.Pattern, object]] = {
         r"[ \t]*[:=][ \t]*(?P<v>[^\s#'\"$%{}()\[\],;<>]{4,})[ \t]*$"), "v"),
     "Segreto/API key": ("critico", re.compile(
         r"""(?i)(?:api[_-]?key|apikey|secret(?:[_-]?key)?|access[_-]?token|auth[_-]?token|private[_-]?key|client[_-]?secret)['"]?\s*(?:=>|[:=])\s*['"](?P<v>[A-Za-z0-9_\-./+=]{16,})['"]"""), "v"),
+    "Variabile segreta": ("critico", re.compile(
+        r"""(?i)[$@]?\b[A-Za-z_]*(?:pass|pwd|secret|api_?key|token|keypass|credential)[A-Za-z_]*\s*=\s*['"](?P<v>[^'"\n]{4,})['"]"""), "v"),
+    "Costante segreta": ("critico", re.compile(
+        r"""(?i)define\s*\(\s*['"][A-Z0-9_]*(?:PASS|PWD|KEY|SECRET|TOKEN)[A-Z0-9_]*['"]\s*,\s*['"](?P<v>[^'"\n]{4,})['"]"""), "v"),
+    "Chiave applicazione": ("critico", re.compile(r"base64:[A-Za-z0-9+/]{30,}={0,2}"), 0),
     "IBAN": ("critico", re.compile(r"\bIT\s?\d{2}\s?[A-Z]\s?(?:\d\s?){10}(?:[A-Z0-9]\s?){11}[A-Z0-9]\b"), 0),
     "Codice fiscale": ("critico", re.compile(r"\b[A-Z]{6}\d{2}[A-EHLMPRST]\d{2}[A-Z]\d{3}[A-Z]\b"), 0),
     "Telefono": ("personale", re.compile(r"(?<![\w+])(?:\+|00)39[ .\-]?\d{2,4}[ .\-]?\d{3,4}[ .\-]?\d{3,4}(?!\d)"), 0),
@@ -222,15 +227,16 @@ def _cmd(args: list[str], cwd: Path | None = None, timeout: int = 600) -> subpro
 
 
 def _git() -> str:
-    g = shutil.which("git") or r"C:\Program Files\Git\cmd\git.exe"
+    g = shutil.which("git") or ("/usr/bin/git" if os.name != "nt" else r"C:\Program Files\Git\cmd\git.exe")
     if not Path(g).exists() and not shutil.which("git"):
         raise RuntimeError("Git non è installato.")
     return g
 
 
 def _gh() -> str:
+    mac = [str(x) for x in sorted((DATA / "strumenti").glob("gh*/bin/gh"))] + ["/usr/local/bin/gh", "/opt/homebrew/bin/gh"]
     for c in (shutil.which("gh"), r"C:\Program Files\GitHub CLI\gh.exe",
-              os.path.expandvars(r"%LOCALAPPDATA%\Programs\GitHub CLI\gh.exe")):
+              os.path.expandvars(r"%LOCALAPPDATA%\Programs\GitHub CLI\gh.exe"), *mac):
         if c and Path(c).exists():
             return c
     raise RuntimeError("GitHub CLI (gh) non è installato.")
@@ -437,7 +443,8 @@ def _trova(testo: str, est: str) -> list[tuple[str, str, int, int, int]]:
                 continue
             if tipo == "Password in chiaro" and testo[max(0, m.start() - 6):m.start()].rstrip(" \t'\"").endswith("?"):
                 continue                                   # ternario:  x ? "password" : "text"
-            if tipo in ("Password in chiaro", "Segreto in configurazione", "Segreto/API key"):
+            if tipo in ("Password in chiaro", "Segreto in configurazione", "Segreto/API key", "Variabile segreta",
+                        "Costante segreta"):
                 if re.fullmatch(r"(?i)(?:x+|\*+|changeme|password|secret|your[_-]?\w*|example\w*|placeholder|"
                                 r"null|none|true|false|undefined|process\.env.*|os\.environ.*|getenv.*|env\(.*|"
                                 r"\$\{?\w+\}?|<.*>|\{\{.*\}\}|" + re.escape(SEGNAPOSTO) + r")", v):
@@ -550,6 +557,8 @@ def stato_github() -> dict:
 
 def pubblica(slug: str, nome_repo: str, descrizione: str = "", pubblico: bool = False) -> dict:
     meta = _leggi_meta(slug)
+    if pubblico and meta.get("origine") == "cartella":
+        raise ValueError("Codice aziendale importato da cartella: si carica solo come privato.")
     if meta.get("repo"):
         raise ValueError("Progetto già pubblicato su GitHub. Per una nuova versione carica un nuovo ZIP.")
     nome_repo = re.sub(r"[^A-Za-z0-9._-]+", "-", (nome_repo or meta["nome"]).strip()).strip("-.")[:100]
@@ -567,7 +576,7 @@ def pubblica(slug: str, nome_repo: str, descrizione: str = "", pubblico: bool = 
     u = _identita_github()
     g, gh = _git(), _gh()
     for args in (["config", "user.name", u.get("name") or load_settings()["nome"]], ["config", "user.email", u["email"]],
-                 ["config", "core.autocrlf", "true"], ["add", "-A"]):
+                 ["config", "core.autocrlf", "true" if os.name == "nt" else "input"], ["add", "-A"]):
         r = _cmd([g, *args], cwd=codice)
         if r.returncode:
             raise RuntimeError(f"git {args[0]}: {r.stderr.strip()}")
@@ -588,6 +597,8 @@ def pubblica(slug: str, nome_repo: str, descrizione: str = "", pubblico: bool = 
 
 def rendi_pubblico(slug: str) -> dict:
     meta = _leggi_meta(slug)
+    if meta.get("origine") == "cartella":
+        raise ValueError("Questo è codice aziendale importato da cartella: resta privato. In pubblico va solo la vetrina.")
     if not meta.get("repo"):
         raise ValueError("Prima pubblica il progetto come privato.")
     a = analizza(_dir(slug) / "codice")
