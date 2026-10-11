@@ -575,7 +575,7 @@ V.impostazioni = async m => {
     <label><input type="checkbox" id="s-portali_auto" ${s.portali_auto ? "checked" : ""}> Ogni mattina importa da LinkedIn, Indeed e gestionale (solo se collegati; apre Chrome per qualche minuto)</label></div>
    <div class="card"><h2 style="margin-top:0">👤 Profilo (fonte di verità per le bozze)</h2>
     <label>Posizionamento</label><input id="s-headline" value="${esc(s.headline)}" style="width:100%">
-    <label>Firma</label><input id="s-firma" value="${esc(s.firma)}" style="width:100%">
+    <label>Firma (una riga per voce)</label><textarea id="s-firma" style="min-height:70px">${esc(s.firma)}</textarea>
     <label>Competenze (separate da virgola)</label><textarea id="s-competenze" style="min-height:70px">${esc(s.competenze.join(", "))}</textarea>
     <label>Forme di collaborazione</label><textarea id="s-contratti" style="min-height:60px">${esc(s.contratti.join(", "))}</textarea>
     <label>Parole chiave annunci</label><textarea id="s-parole_chiave" style="min-height:60px">${esc(s.parole_chiave.join(", "))}</textarea>
