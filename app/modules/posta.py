@@ -253,6 +253,39 @@ def invia_approvata(bozza_id: int) -> dict:
     return {"ok": True, "esito": esito}
 
 
+def invia_approvate() -> dict:
+    """Routine: spedisce le bozze che Gaspare ha già approvato (mai quelle ancora da approvare).
+    Quelle senza email (portali, LinkedIn) restano in Approvate da copiare a mano."""
+    inviate, saltate = 0, []
+    for b in db.q("SELECT id, destinatario FROM bozze WHERE stato='approvata' AND destinatario LIKE '%@%' ORDER BY id"):
+        try:
+            r = invia_approvata(b["id"])
+        except Exception as e:
+            r = {"ok": False, "errore": str(e)}
+        if r.get("ok"):
+            inviate += 1
+        else:
+            saltate.append(f"{b['id']}: {r.get('errore')}")
+    if inviate or saltate:
+        db.log("posta", f"Invio automatico delle approvate: {inviate} inviate"
+                        + (f", {len(saltate)} non inviate ({'; '.join(saltate)[:500]})" if saltate else ""))
+    return {"ok": True, "inviate": inviate, "non_inviate": saltate}
+
+
+def invia_a_me(oggetto: str, testo: str) -> None:
+    """Email di servizio a Gaspare (promemoria, agenda): unico invio che non passa da Da approvare."""
+    s = load_settings()
+    me = vault.get_cred("imap_user") or s["email"]
+    msg = EmailMessage()
+    msg["From"] = f"Agente Lavoro <{me}>"
+    msg["To"] = s["email"] or me
+    msg["Subject"] = oggetto
+    msg["Message-ID"] = make_msgid(domain="gasparepettinati.it")
+    msg.set_content(testo)
+    with _smtp() as smtp:
+        smtp.send_message(msg)
+
+
 def _dopo_invio(b: dict, dest: str, esito: str) -> None:
     oggi = db.now()
     canale = "email"

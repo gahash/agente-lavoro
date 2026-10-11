@@ -38,7 +38,7 @@ DEFAULTS: dict = {
     "max_solleciti": 2,
     # modello locale
     "ollama_url": "http://127.0.0.1:11434",
-    "modello": "llama3.1:8b",
+    "modello": "qwen3:4b",              # Mac Intel 12 GB, solo CPU: 4B è il massimo fluido
     # profilo
     "nome": "Gaspare Pettinati",
     "sito": "https://gasparepettinati.it",
@@ -72,24 +72,37 @@ DEFAULTS: dict = {
     "portali_auto": False,                 # importa da LinkedIn/Indeed anche alla ricerca automatica del mattino
     # browser
     "browser_canale": "chrome",            # chrome | msedge
+    "browser_modalita": "personale",       # personale = il TUO Chrome + segnalibro | app = Chrome separato comandato dall'app
     # routine quotidiana (lun-ven): diventa la lista "Cose da fare" di ogni giorno
+    # 09:00-16:00 riunioni: si lavora prima, negli spazi liberi delle 11:00 e 13:40, e dopo le 16
     "routine": [
-        {"ora": "08:30", "titolo": "Leggi il report del mattino", "vista": "home"},
-        {"ora": "08:45", "titolo": "Approva o correggi le bozze in attesa", "vista": "bozze"},
-        {"ora": "09:00", "titolo": "Rispondi alle email importanti (🔴🟠)", "vista": "posta"},
-        {"ora": "09:30", "titolo": "Candidati ai 3 migliori annunci del giorno", "vista": "lavoro"},
-        {"ora": "10:30", "titolo": "LinkedIn: 5 messaggi a recruiter/CTO + 1 post o commento", "vista": "lavoro"},
-        {"ora": "11:30", "titolo": "PMI: analizza aziende e prepara le proposte (max 15)", "vista": "pmi"},
-        {"ora": "14:30", "titolo": "Follow-up dei contatti senza risposta", "vista": "pipeline"},
-        {"ora": "15:30", "titolo": "Lavora su vetrine GitHub / sito (30 min)", "vista": ""},
-        {"ora": "17:30", "titolo": "Aggiorna la pipeline (stati, prossimi passi, call)", "vista": "pipeline"},
+        {"ora": "08:15", "titolo": "Leggi il report del mattino e l'agenda", "vista": "home"},
+        {"ora": "08:30", "titolo": "Approva o correggi le bozze in attesa", "vista": "bozze"},
+        {"ora": "08:45", "titolo": "Rispondi alle email importanti (🔴🟠)", "vista": "posta"},
+        {"ora": "11:00", "titolo": "Spazio libero: approva le bozze nuove (partono alle 11:15)", "vista": "bozze"},
+        {"ora": "13:40", "titolo": "Spazio libero: risposte e follow-up da approvare (partono alle 13:55)", "vista": "bozze"},
+        {"ora": "16:15", "titolo": "Fissa le call con chi ha risposto (pipeline → 📅 Fissa)", "vista": "pipeline"},
+        {"ora": "16:30", "titolo": "Candidati ai 3 migliori annunci del giorno", "vista": "lavoro"},
+        {"ora": "17:00", "titolo": "LinkedIn: 5 messaggi a recruiter/CTO + 1 post o commento", "vista": "lavoro"},
+        {"ora": "17:30", "titolo": "PMI: analizza aziende e prepara le proposte (max 15)", "vista": "pmi"},
+        {"ora": "18:00", "titolo": "Aggiorna la pipeline (stati, prossimi passi, call)", "vista": "pipeline"},
         {"ora": "18:30", "titolo": "Leggi il report della sera e pianifica domani", "vista": "home"},
     ],
     # pianificazione
-    "report_mattino": "08:30",
+    "report_mattino": "08:10",
     "report_sera": "18:30",
-    "controllo_posta": ["08:15", "18:15"],
-    "ricerca_lavoro_ora": "08:00",
+    "controllo_posta": ["07:50", "10:50", "13:30", "18:15"],
+    "ricerca_lavoro_ora": "07:30",
+    # agenda (gestionale del sito) e invii
+    "agenda_api_url": "https://gasparepettinati.it/gestionale/api/agenda.php",
+    "link_prenota": "https://gasparepettinati.it/prenota.php",
+    "orari_occupato": ["09:00-16:00"],          # riunioni, lun-ven: mai appuntamenti qui
+    "spazi_liberi": ["11:00-11:20", "13:40-14:00"],  # finestre libere dentro le riunioni (per te, non per i clienti)
+    "slot_clienti": ["16:30", "17:15", "18:00"],     # orari proposti ai clienti
+    "durata_appuntamento": 30,
+    "promemoria_minuti": 30,                    # se l'appuntamento nel gestionale non ne ha uno
+    "agenda_mattino": "07:45",                  # email con l'agenda del giorno
+    "invio_approvate": ["08:55", "11:15", "13:55", "16:20", "18:40"],  # partono solo le bozze già approvate
 }
 
 

@@ -51,6 +51,9 @@ CREATE TABLE IF NOT EXISTS attivita (
   id INTEGER PRIMARY KEY, uid TEXT UNIQUE, data TEXT, ora TEXT, titolo TEXT, dettaglio TEXT,
   origine TEXT, vista TEXT, priorita INTEGER DEFAULT 2, fatto INTEGER DEFAULT 0, fatto_il TEXT);
 
+CREATE TABLE IF NOT EXISTS promemoria (
+  id INTEGER PRIMARY KEY, uid TEXT UNIQUE, inviato TEXT);
+
 CREATE TABLE IF NOT EXISTS eventi (
   id INTEGER PRIMARY KEY, quando TEXT, livello TEXT, modulo TEXT, messaggio TEXT);
 """

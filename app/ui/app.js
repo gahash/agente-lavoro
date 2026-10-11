@@ -37,8 +37,12 @@ async function refreshStato() {
   $("#b-bozze").textContent = n.bozze_da_approvare || "";
   $("#b-posta").textContent = (n.posta_da_gestire + n.posta_allarmi) || "";
   const ai = $("#ai-stato");
-  if (STATO.modelli.length) { ai.className = "pill ok"; ai.textContent = "AI locale: " + STATO.impostazioni.modello; }
-  else { ai.className = "pill bad"; ai.textContent = "AI locale non attiva"; }
+  const mod = STATO.impostazioni.modello, dl = STATO.download_modello || {};
+  const pronto = STATO.modelli.some(x => x === mod || x === mod + ":latest");
+  if (pronto) { ai.className = "pill ok"; ai.textContent = "AI locale: " + mod; }
+  else if (dl.attivo) { ai.className = "pill"; ai.textContent = `Scarico ${dl.modello}… ${dl.percento}%`; }
+  else { ai.className = "pill bad"; ai.textContent = dl.errore ? "AI: download non riuscito" : (STATO.modelli.length ? `AI: manca ${mod}` : "AI locale non attiva"); ai.title = dl.errore || ""; }
+  clearTimeout(refreshStato.t); if (dl.attivo) refreshStato.t = setTimeout(refreshStato, 4000);
 }
 
 // ------------------------------------------------------------------ viste
@@ -47,7 +51,7 @@ const V = {};
 V.home = async m => {
   await refreshStato(); const n = STATO.numeri;
   m.innerHTML = `<h1>Buongiorno Gaspare</h1><p class="sub">${new Date().toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"})} — cosa c'è da fare oggi</p>
-  ${!STATO.modelli.length ? `<div class="warnbox">Il modello AI locale non risponde. Avvia <b>Ollama</b> (deve esserci <b>llama3.1:8b</b>) e ricarica.</div>` : ""}
+  ${!STATO.modelli.length ? `<div class="warnbox">Il modello AI locale non risponde. Avvia <b>Ollama</b>: il modello <b>${esc(STATO.impostazioni.modello)}</b> viene scaricato in automatico (una volta sola) e poi ricarica.</div>` : ""}
   ${!STATO.credenziali.imap_password.impostato ? `<div class="warnbox">Credenziali email non inserite: vai su <a href="#" onclick="go('impostazioni')">Impostazioni</a>.</div>` : ""}
   <div class="grid">
     <div class="card kpi"><b>${n.bozze_da_approvare}</b><span>bozze da approvare</span></div>
@@ -184,7 +188,7 @@ V.lavoro = async m => {
     const t = e.target;
     if (t.dataset.url) { e.preventDefault(); run(t, () => api("/api/browser/apri", {url: t.dataset.url})); }
     if (t.dataset.go2) { e.preventDefault(); return go(t.dataset.go2); }
-    if (t.dataset.an) run(t, () => api(`/api/lavoro/${t.dataset.an}/analizza`, {}), r => `Valutato: punteggio ${r.punteggio}`).then(() => go("lavoro"));
+    if (t.dataset.an) run(t, () => api(`/api/lavoro/${t.dataset.an}/analizza`, {}), r => r.messaggio || `Valutato: punteggio ${r.punteggio}`).then(() => go("lavoro"));
     if (t.dataset.cand) run(t, () => api(`/api/lavoro/${t.dataset.cand}/candidatura`, {}), "Bozza di candidatura creata → Da approvare").then(refreshStato);
     if (t.dataset.li) run(t, () => api(`/api/lavoro/${t.dataset.li}/linkedin`, {}), "Messaggio LinkedIn creato → Da approvare").then(refreshStato);
   };
@@ -220,7 +224,7 @@ V.pmi = async m => {
 V.bozze = async m => {
   const tab = V.bozze.tab || "da_approvare";
   const lista = await api("/api/bozze?stato=" + tab);
-  m.innerHTML = `<h1>Da approvare</h1><p class="sub">Niente parte senza il tuo OK. Modifica il testo, approva, poi invia (o copia nelle Bozze della casella).</p>
+  m.innerHTML = `<h1>Da approvare</h1><p class="sub">Niente parte senza il tuo OK. Modifica il testo e approva: le approvate con un'email partono da sole alle ${esc((STATO.impostazioni.invio_approvate || []).join(", "))} (lun-ven), oppure con "Invia ora".</p>
   <div class="row">${[["da_approvare","Da approvare"],["approvata","Approvate"],["inviata","Inviate"],["scartata","Scartate"]].map(([k,l]) =>
     `<button class="${k===tab?"":"sec"} sm" data-tab="${k}">${l}</button>`).join("")}</div>
   ${lista.map(b => `<div class="card draft" style="margin-bottom:12px" data-id="${b.id}">
@@ -297,7 +301,7 @@ V.pipeline = async m => {
     <td><select data-st="${p.id}">${STATI.map(s => `<option ${s===p.stato?"selected":""}>${s}</option>`).join("")}</select></td>
     <td class="small">${esc(p.prossimo_passo)}<br><b style="color:${p.data_prossimo && p.data_prossimo <= oggi ? "var(--bad)" : "inherit"}">${esc(p.data_prossimo)}</b></td>
     <td>${p.valore ?? ""}</td>
-    <td style="white-space:nowrap"><button class="sm sec" data-ed="${p.id}">Modifica</button> ${p.stato === "Contattato" ? `<button class="sm" data-fu="${p.id}">Follow-up (${p.solleciti}/2)</button>` : ""}</td></tr>`).join("") ||
+    <td style="white-space:nowrap"><button class="sm sec" data-ed="${p.id}">Modifica</button> ${p.stato === "Contattato" ? `<button class="sm" data-fu="${p.id}">Follow-up (${p.solleciti}/2)</button>` : ""} ${!["Vinto","Perso"].includes(p.stato) ? `<button class="sm sec" data-app="${p.id}">📅 Fissa</button>` : ""}</td></tr>`).join("") ||
     `<tr><td colspan="6" class="muted">Pipeline vuota.</td></tr>`}</tbody></table>`;
   let editId = null;
   const form = (p = {}) => (editId = p.id || null, modal(`<h2>${p.id ? "Modifica" : "Nuova"} voce</h2><div class="cols">
@@ -311,6 +315,7 @@ V.pipeline = async m => {
     if (t.id === "xls") run(t, () => api("/api/export", {}), r => "Salvato: " + r.file);
     if (t.dataset.ed) form(lista.find(x => x.id == t.dataset.ed));
     if (t.dataset.fu) run(t, () => api(`/api/pipeline/${t.dataset.fu}/follow-up`, {}), "Follow-up creato → Da approvare").then(refreshStato);
+    if (t.dataset.app) fissa(lista.find(x => x.id == t.dataset.app), t);
   };
   m.onchange = e => { if (e.target.dataset.st) api("/api/pipeline", {id: e.target.dataset.st, stato: e.target.value}).then(() => toast("Stato aggiornato")); };
   $("#modal").onclick = e => { if (e.target.id === "p-save") {
@@ -320,59 +325,109 @@ V.pipeline = async m => {
     api("/api/pipeline", d).then(() => { closeModal(); go("pipeline"); }).catch(err => toast(err.message, true)); } };
 };
 
+// fissa un appuntamento nel gestionale del sito per una voce della pipeline
+async function fissa(p, btn) {
+  const ag = await run(btn, () => api("/api/agenda"));
+  if (!ag) return;
+  if (!ag.collegata) return toast(ag.errore, true);
+  modal(`<h2>📅 Appuntamento con ${esc(p.azienda)}</h2>
+    <p class="small muted">Orari liberi (fuori dalle riunioni ${esc(STATO.impostazioni.orari_occupato.join(", "))} e dagli appuntamenti già nel gestionale):</p>
+    <select id="a-slot" style="width:100%">${ag.slot.map(s => `<option value="${esc(s.valore)}">${esc(s.testo)}</option>`).join("")}<option value="">Altro orario…</option></select>
+    <label>Altro orario</label><input id="a-altro" type="datetime-local" style="width:100%">
+    <label>Tipo</label><select id="a-tipo">${["call","consulenza","riunione","sopralluogo","altro"].map(x => `<option>${x}</option>`).join("")}</select>
+    <label>Luogo / link call</label><input id="a-luogo" style="width:100%" placeholder="Google Meet, Zoom, telefono, indirizzo…">
+    <label><input type="checkbox" id="a-conf" ${p.contatto && p.contatto.includes("@") ? "checked" : "disabled"}> Prepara l'email di conferma per ${esc(p.contatto || "—")} (va in Da approvare)</label>
+    <div class="row" style="margin-top:12px"><button id="a-ok">Fissa nel gestionale</button><button class="sec" onclick="closeModal()">Annulla</button></div>`);
+  $("#a-ok").onclick = e => {
+    const inizio = $("#a-slot").value || $("#a-altro").value;
+    if (!inizio) return toast("Scegli un orario", true);
+    run(e.target, () => api(`/api/pipeline/${p.id}/appuntamento`, {inizio, tipo: $("#a-tipo").value, luogo: $("#a-luogo").value, conferma: $("#a-conf").checked}),
+      r => `Fissato: ${r.quando}` + (r.bozza ? " — conferma in Da approvare" : ""))
+      .then(r => { if (r && r.ok !== false) { closeModal(); refreshStato(); go("pipeline"); } });
+  };
+}
+
+V.agenda = async m => {
+  const ag = await api("/api/agenda");
+  const s = STATO.impostazioni;
+  m.innerHTML = `<h1>Agenda</h1><p class="sub">Appuntamenti del gestionale del sito. Riunioni ${esc(s.orari_occupato.join(", "))} · spazi liberi ${esc(s.spazi_liberi.join(", "))} ·
+    promemoria via email ${s.promemoria_minuti} minuti prima (se l'appuntamento non ne ha uno suo) · agenda del giorno via email alle ${esc(s.agenda_mattino)}.</p>
+  ${ag.collegata ? "" : `<div class="warnbox">${esc(ag.errore)} Vedi le istruzioni in <code>gestionale/api/agenda.php</code>.</div>`}
+  <div class="row"><button class="sec" id="prom">⏰ Controlla promemoria ora</button><button class="sec" id="inv">📤 Invia ora le approvate</button>
+    <a class="small" href="#" id="gest">Apri l'agenda del gestionale ↗</a></div>
+  <div class="cols"><div class="card"><h2 style="margin-top:0">Prossimi 14 giorni</h2>
+    ${ag.appuntamenti.map(a => `<p><b>${esc(dt(a.inizio.replace(" ", "T")))}</b> ${esc(a.titolo)}<br><span class="small muted">${esc([a.tipo, a.cliente, a.luogo].filter(Boolean).join(" · "))}</span></p>`).join("") || `<p class="muted">Nessun appuntamento.</p>`}</div>
+   <div class="card"><h2 style="margin-top:0">Orari liberi da proporre</h2>
+    ${ag.slot.map(x => `<p>🟢 ${esc(x.testo)}</p>`).join("") || `<p class="muted">—</p>`}
+    <p class="small muted">Finiscono da soli nei follow-up e al posto di [ORARI] nelle risposte. Per fissarne uno: Pipeline → 📅 Fissa.</p></div></div>`;
+  $("#prom").onclick = e => run(e.target, () => api("/api/agenda/promemoria", {}), r => `Promemoria inviati: ${r.inviati}`);
+  $("#inv").onclick = e => run(e.target, () => api("/api/invio-approvate", {}), r => `Inviate: ${r.inviate}` + (r.non_inviate.length ? ` — non inviate: ${r.non_inviate.length} (vedi Registro)` : "")).then(refreshStato);
+  $("#gest").onclick = e => { e.preventDefault(); api("/api/browser/apri", {url: s.crm_url_lead + "index.php?tab=appuntamenti"}).catch(err => toast(err.message, true)); };
+};
+
 V.crm = async m => {
   const lead = await api("/api/crm/lead");
+  const sg = await api("/api/ponte/segnalibro").catch(() => ({personale: false}));
+  const P = sg.personale;
   const s = STATO.impostazioni;
   const ric = s.ricerche_portali || [];
-  m.innerHTML = `<h1>Collegamenti</h1><p class="sub">LinkedIn, Indeed e il gestionale si collegano allo stesso modo: accedi tu <b>una volta</b> nel browser dell'app (anche con verifica in due passaggi) e la sessione resta salvata. L'app non conosce le tue password.</p>
-  <div class="card" style="margin-bottom:16px"><h2 style="margin-top:0">🌐 Il tuo Chrome</h2>
-    <p class="small muted" style="margin-top:0">Un Chrome tutto tuo, usato anche dall'app (collegamento "Chrome (Agente Lavoro)" sul Desktop). Accedi con il tuo account Google e attiva la sincronizzazione: ritrovi password salvate, segnalibri e accessi, e da lì ti colleghi a tutto ciò che serve.</p>
-    <div class="row" style="margin:0"><button id="chrome">🌐 Apri il mio Chrome</button><button class="sec" id="google">🔑 Collega account Google</button></div></div>
+  const portale = (k, nome, desc) => `<div class="card"><h2 style="margin-top:0">${nome}</h2>
+    <div class="row"><button data-colleg="${k}">🔗 ${P ? "Apri " + nome : "Collega / apri"}</button></div>
+    <label>${P ? `Apri la ricerca nel tuo Chrome (${desc}), poi premi ⭐ sulla lista` : `Cerca e importa annunci (${desc})`}</label>
+    <div class="row">${ric.map(r => `<button class="sec sm" data-cerca="${k}" data-parole="${esc(r)}">${esc(r)}</button>`).join("")}</div></div>`;
+  m.innerHTML = `<h1>Collegamenti</h1>
+  ${P ? `<p class="sub">Si usa <b>il tuo Chrome</b>, con il profilo e gli accessi che hai già (Google, LinkedIn, Indeed, gestionale). L'app apre le pagine lì; tu premi il segnalibro ⭐ e la pagina che stai guardando arriva qui. L'app non vede password né cookie.</p>
+  <div class="card" style="margin-bottom:16px"><h2 style="margin-top:0">⭐ Segnalibro «Invia ad Agente Lavoro» — da fare una volta</h2>
+    <ol class="small" style="margin:0 0 12px 18px;padding:0;line-height:1.7">
+      <li>In Chrome mostra la barra dei preferiti: <b>⌘ Cmd + Maiusc + B</b>.</li>
+      <li><b>Trascina</b> il pulsante giallo qui sotto sulla barra dei preferiti.</li>
+      <li>Su una ricerca LinkedIn/Indeed, su un singolo annuncio o sulla pagina lead del gestionale, premi il segnalibro: si apre una scheda di conferma e i dati arrivano qui.</li></ol>
+    <a id="segn" href="${esc(sg.href)}" style="display:inline-block;background:#f59e0b;color:#111;padding:10px 18px;border-radius:8px;font-weight:700;text-decoration:none;cursor:grab">⭐ Invia ad Agente Lavoro</a>
+    <span class="small muted" style="margin-left:10px">Puoi cambiare modalità in Impostazioni → Gestionale & browser.</span>${sg.porta_ok ? "" : `<div class="warnbox" style="margin-top:10px">L'app è aperta su un indirizzo diverso da 127.0.0.1:8000: il segnalibro non la trova. Chiudi l'app e riaprila dall'icona sulla Scrivania.</div>`}</div>`
+  : `<p class="sub">LinkedIn, Indeed e il gestionale si collegano allo stesso modo: accedi tu <b>una volta</b> nel browser dell'app (anche con verifica in due passaggi) e la sessione resta salvata. L'app non conosce le tue password.</p>
+  <div class="card" style="margin-bottom:16px"><h2 style="margin-top:0">🌐 Chrome dell'app</h2>
+    <p class="small muted" style="margin-top:0">Un Chrome separato con un profilo dedicato, comandato dall'app. Accedi con il tuo account Google e attiva la sincronizzazione per ritrovare password e accessi.</p>
+    <div class="row" style="margin:0"><button id="chrome">🌐 Apri il Chrome dell'app</button><button class="sec" id="google">🔑 Collega account Google</button></div></div>
   <div class="card" style="margin-bottom:16px"><div class="row" style="margin:0">
     <span id="st-linkedin" class="tag">LinkedIn: ?</span><span id="st-indeed" class="tag">Indeed: ?</span><span id="st-gestionale" class="tag">Gestionale: ?</span>
     <button class="sec sm" id="verifica">🔄 Verifica collegamenti</button>
-    <button class="sec sm" id="ripara" title="Riapre le schede di Chrome che non rispondono">🩹 Ripara Chrome</button></div></div>
-  <div class="cols">
-   <div class="card"><h2 style="margin-top:0">in LinkedIn</h2>
-    <div class="row"><button data-colleg="linkedin">🔗 Collega / apri</button></div>
-    <label>Cerca e importa annunci (remoto e ibrido, Italia, ultimi 3 giorni)</label>
-    <div class="row">${ric.map(r => `<button class="sec sm" data-cerca="linkedin" data-parole="${esc(r)}">${esc(r)}</button>`).join("")}</div></div>
-   <div class="card"><h2 style="margin-top:0">Indeed</h2>
-    <div class="row"><button data-colleg="indeed">🔗 Collega / apri</button></div>
-    <label>Cerca e importa annunci (da remoto, Italia, ultimi 3 giorni)</label>
-    <div class="row">${ric.map(r => `<button class="sec sm" data-cerca="indeed" data-parole="${esc(r)}">${esc(r)}</button>`).join("")}</div></div>
-  </div>
-  <div class="card" style="margin-top:16px"><div class="row" style="margin:0"><button id="importa">📥 Importa annunci dalla pagina LinkedIn/Indeed aperta</button>
-    <span class="small muted">Gli annunci importati compaiono in Opportunità lavoro: premi "🧠 Analizza" per leggerli per intero e valutarli con l'AI. Messaggi e candidature su LinkedIn/Indeed restano manuali (le bozze sono in Da approvare).</span></div></div>
+    <button class="sec sm" id="ripara" title="Riapre le schede di Chrome che non rispondono">🩹 Ripara Chrome</button></div></div>`}
+  <div class="cols">${portale("linkedin", "LinkedIn", "remoto e ibrido, Italia, ultimi 3 giorni")}${portale("indeed", "Indeed", "da remoto, Italia, ultimi 3 giorni")}</div>
+  ${P ? "" : `<div class="card" style="margin-top:16px"><div class="row" style="margin:0"><button id="importa">📥 Importa annunci dalla pagina LinkedIn/Indeed aperta</button>
+    <span class="small muted">Gli annunci importati compaiono in Opportunità lavoro: premi "🧠 Analizza" per leggerli per intero e valutarli con l'AI. Messaggi e candidature su LinkedIn/Indeed restano manuali (le bozze sono in Da approvare).</span></div></div>`}
   <h2>Gestionale gasparepettinati.it</h2>
   <div class="cols"><div class="card">
-    <div class="row"><button id="login">🔗 Collega / apri il gestionale</button><button class="sec" id="leggi">📥 Leggi tabelle della pagina aperta</button></div>
+    <div class="row"><button id="login">🔗 ${P ? "Apri il gestionale" : "Collega / apri il gestionale"}</button>${P ? "" : `<button class="sec" id="leggi">📥 Leggi tabelle della pagina aperta</button>`}</div>
+    ${P ? `<p class="small muted">Vai sulla pagina dei lead/contatti e premi ⭐: le tabelle vengono salvate qui sotto.</p>` : ""}
     <div id="menu" class="small"></div></div>
    <div class="card"><h2 style="margin-top:0">Browser</h2>
     <div class="row"><input id="url" placeholder="https://…" style="flex:1"><button id="apri">Apri</button></div>
-    <div class="row"><button id="anal">🧠 Analizza annuncio nella pagina aperta</button><button class="sec" id="chiudi">Stacca l'app dal browser</button></div>
-    <p class="small muted">Apri un annuncio su LinkedIn/Indeed/InfoJobs (con il tuo login), poi "Analizza": l'AI locale estrae dati e punteggio e lo aggiunge alle opportunità.</p></div></div>
+    ${P ? `<p class="small muted">Apri un annuncio (LinkedIn, Indeed, InfoJobs o qualsiasi sito) e premi ⭐: l'AI locale estrae dati e punteggio e lo aggiunge alle opportunità.</p>`
+        : `<div class="row"><button id="anal">🧠 Analizza annuncio nella pagina aperta</button><button class="sec" id="chiudi">Stacca l'app dal browser</button></div>
+    <p class="small muted">Apri un annuncio su LinkedIn/Indeed/InfoJobs (con il tuo login), poi "Analizza": l'AI locale estrae dati e punteggio e lo aggiunge alle opportunità.</p>`}</div></div>
   <h2>Dati letti dal gestionale (${lead.length})</h2>
   <table><thead><tr><th>Letto</th><th>Dati</th></tr></thead><tbody>
   ${lead.map(l => { const d = JSON.parse(l.dati); return `<tr><td class="small">${dt(l.letto)}</td><td class="small">${Object.entries(d).map(([k,v]) => `<b>${esc(k)}:</b> ${esc(v)}`).join(" · ")}</td></tr>`; }).join("") ||
-   `<tr><td colspan="2" class="muted">Ancora nulla. Accedi, apri la pagina dei lead/contatti e premi "Leggi tabelle".</td></tr>`}</tbody></table>`;
+   `<tr><td colspan="2" class="muted">Ancora nulla. ${P ? "Apri la pagina dei lead nel tuo Chrome e premi ⭐." : "Accedi, apri la pagina dei lead/contatti e premi \"Leggi tabelle\"."}</td></tr>`}</tbody></table>`;
+  const on = (id, fn) => { const el = $("#" + id); if (el) el.onclick = fn; };
   const showMenu = r => { if (r?.menu?.length) $("#menu").innerHTML = "<p class='muted'>Sezioni trovate — clic per aprire e leggere:</p>" + r.menu.map(x => `<button class="sm sec" data-read="${esc(x.url)}">${esc(x.testo)}</button>`).join(" "); };
   const mostraStato = st => { for (const [k, v] of Object.entries(st || {})) { const el = $("#st-" + k); if (el) { el.textContent = `${k[0].toUpperCase() + k.slice(1)}: ${v ? "collegato ✅" : "non collegato"}`; el.style.color = v ? "var(--ok)" : "var(--muted)"; } } };
-  $("#chrome").onclick = e => run(e.target, () => api("/api/browser/avvia", {}), "Chrome aperto");
-  $("#google").onclick = e => run(e.target, () => api("/api/browser/google", {}), r => r.messaggio);
-  $("#verifica").onclick = e => run(e.target, () => api("/api/portali/stato", {})).then(mostraStato);
-  $("#ripara").onclick = e => run(e.target, () => api("/api/browser/ripara", {}), r => r.messaggio);
-  $("#importa").onclick = e => run(e.target, () => api("/api/portali/importa", {}), r => `${r.portale}: ${r.nuovi} nuovi annunci su ${r.letti}`);
-  m.addEventListener("click", e => { const t = e.target;
+  on("segn", e => { e.preventDefault(); toast("Trascina il pulsante sulla barra dei preferiti di Chrome, poi premilo dalle pagine LinkedIn/Indeed/gestionale."); });
+  on("chrome", e => run(e.target, () => api("/api/browser/avvia", {}), "Chrome aperto"));
+  on("google", e => run(e.target, () => api("/api/browser/google", {}), r => r.messaggio));
+  on("verifica", e => run(e.target, () => api("/api/portali/stato", {})).then(mostraStato));
+  on("ripara", e => run(e.target, () => api("/api/browser/ripara", {}), r => r.messaggio));
+  on("importa", e => run(e.target, () => api("/api/portali/importa", {}), r => `${r.portale}: ${r.nuovi} nuovi annunci su ${r.letti}`));
+  on("login", e => run(e.target, () => api("/api/crm/login", {}), r => r.collegato ? "Gestionale collegato ✅" : r.messaggio).then(showMenu));
+  on("leggi", e => run(e.target, () => api("/api/crm/leggi", {}), r => `${r.tabelle.length} tabelle lette`).then(r => { showMenu(r); go("crm"); }));
+  on("apri", e => { let u = $("#url").value.trim(); if (!u) return; if (!/^https?:/.test(u)) u = "https://" + u; run(e.target, () => api("/api/browser/apri", {url: u}), P ? "Aperto nel tuo Chrome" : null); });
+  on("anal", e => run(e.target, () => api("/api/browser/analizza", {}), r => `Annuncio aggiunto: ${r.ruolo} — punteggio ${r.punteggio}`));
+  on("chiudi", e => run(e.target, () => api("/api/browser/chiudi", {})));
+  m.onclick = e => { const t = e.target;
     if (t.dataset.colleg) run(t, () => api(`/api/portali/${t.dataset.colleg}/collega`, {}), r => r.collegato ? "Già collegato ✅" : r.messaggio);
-    if (t.dataset.cerca) run(t, () => api(`/api/portali/${t.dataset.cerca}/cerca`, {parole: t.dataset.parole}), r => `${r.portale}: ${r.nuovi} nuovi annunci su ${r.letti}`);
-  });
-  $("#login").onclick = e => run(e.target, () => api("/api/crm/login", {}), r => r.collegato ? "Gestionale collegato ✅" : r.messaggio).then(showMenu);
-  $("#leggi").onclick = e => run(e.target, () => api("/api/crm/leggi", {}), r => `${r.tabelle.length} tabelle lette`).then(r => { showMenu(r); go("crm"); });
-  $("#apri").onclick = e => { let u = $("#url").value.trim(); if (!/^https?:/.test(u)) u = "https://" + u; run(e.target, () => api("/api/browser/apri", {url: u})); };
-  $("#anal").onclick = e => run(e.target, () => api("/api/browser/analizza", {}), r => `Annuncio aggiunto: ${r.ruolo} — punteggio ${r.punteggio}`);
-  $("#chiudi").onclick = e => run(e.target, () => api("/api/browser/chiudi", {}));
-  m.onclick = e => { if (e.target.dataset.read) run(e.target, () => api("/api/crm/leggi", {url: e.target.dataset.read}), r => `${r.tabelle?.length ?? 0} tabelle lette`).then(() => go("crm")); };
+    if (t.dataset.cerca) run(t, () => api(`/api/portali/${t.dataset.cerca}/cerca`, {parole: t.dataset.parole}), r => r.messaggio || `${r.portale}: ${r.nuovi} nuovi annunci su ${r.letti}`);
+    if (t.dataset.read) run(t, () => api("/api/crm/leggi", {url: t.dataset.read}), r => `${r.tabelle?.length ?? 0} tabelle lette`).then(() => go("crm"));
+  };
 };
 
 // ------------------------------------------------------------------ progetti GitHub
@@ -392,6 +447,12 @@ V.progetti = async m => {
   const {progetti: lista, github} = await api("/api/progetti");
   m.innerHTML = `<h1>Progetti GitHub</h1><p class="sub">Carica lo ZIP di un progetto: l'app controlla segreti (password, chiavi, token), dati personali e file sensibili.
     Se spunti <b>Pulisci</b> li toglie lei. Il repository nasce <b>privato</b>; diventa pubblico solo con la tua conferma e se il controllo è pulito.</p>
+  <div class="card" style="margin-bottom:16px"><h2 style="margin-top:0">🚀 Caricamento in blocco</h2>
+    <p class="small muted" style="margin-top:0">Importa tutti i progetti di una cartella, li ripulisce e li controlla. Poi carica il <b>codice</b> solo come repository <b>privati</b> (e solo se il controllo è pulito) e pubblica le <b>vetrine</b> (solo descrizione, niente codice). Dump, database, CSV/Excel, audio, PDF, screenshot e .env non vengono mai copiati.</p>
+    <div class="row"><button id="gh-coll">🔑 Collega GitHub</button><span id="gh-st" class="tag">GitHub: ${github.collegato ? "collegato come " + esc(github.account) + " ✅" : "non collegato"}</span></div>
+    <div class="row"><input id="gh-dir" value="~/Desktop/GitHub_Ready" style="flex:1"><button class="sec" id="gh-imp">1️⃣ Importa e controlla</button></div>
+    <div class="row"><button class="sec" id="gh-priv">2️⃣ Carica il codice pulito come PRIVATO</button><button class="sec" id="gh-vetr">3️⃣ Pubblica vetrine e profilo</button><button id="gh-tutto">🚀 Fai tutto: 2️⃣ + 3️⃣</button></div>
+    <div id="gh-job" class="small"></div></div>
   <div class="card" style="margin-bottom:16px">
     <div class="row"><span class="tag" style="color:${github.collegato ? "var(--ok)" : "var(--bad)"}">GitHub: ${github.collegato ? "collegato come " + esc(github.account) + " ✅" : "non collegato"}</span>
       ${github.collegato ? "" : `<span class="small muted">Apri un terminale e lancia <code>gh auth login --web</code>, poi ricarica questa pagina.</span>`}</div>
@@ -407,6 +468,21 @@ V.progetti = async m => {
     <td><button class="sm" data-apri="${esc(p.slug)}">Apri</button></td></tr>`; }).join("") ||
     `<tr><td colspan="6" class="muted">Nessun progetto. Fai uno ZIP della cartella del progetto e caricalo qui sopra.</td></tr>`}</tbody></table>`;
 
+  const mostraJob = async () => {
+    const st = await api("/api/github/stato").catch(() => null); if (!st) return;
+    const j = st.job, box = $("#gh-job"); if (!box) return;
+    $("#gh-st").textContent = "GitHub: " + (st.github.collegato ? "collegato come " + st.github.account + " ✅" : "non collegato");
+    box.innerHTML = j.fase ? `<p><b>${{importa: "Importazione", privati: "Caricamento privati", vetrine: "Vetrine", tutto: "Privati + vetrine"}[j.fase]}</b> — ${j.attivo ? "in corso" : "finito"} (${j.fatti}/${j.totale})</p><ul style="margin:0;padding-left:18px">${j.log.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
+    clearTimeout(mostraJob.t); if (j.attivo) mostraJob.t = setTimeout(mostraJob, 3000); else if (j.fase === "importa" && mostraJob.eraAttivo) go("progetti");
+    mostraJob.eraAttivo = j.attivo;
+  };
+  mostraJob();
+  const avvia = (btn, corpo) => run(btn, () => api("/api/github/avvia", corpo), r => r.messaggio).then(mostraJob);
+  $("#gh-coll").onclick = e => run(e.target, () => api("/api/github/collega", {}), r => r.messaggio).then(mostraJob);
+  $("#gh-imp").onclick = e => avvia(e.target, {fase: "importa", cartella: $("#gh-dir").value});
+  $("#gh-priv").onclick = e => conferma2(e.target, "Confermi? Carico come PRIVATI i progetti puliti", () => avvia(e.target, {fase: "privati", conferma: true}));
+  $("#gh-tutto").onclick = e => conferma2(e.target, "Confermi? Codice PRIVATO + vetrine pubbliche", () => avvia(e.target, {fase: "tutto", conferma: true}));
+  $("#gh-vetr").onclick = e => conferma2(e.target, "Confermi? Pubblico le vetrine (solo testo)", () => avvia(e.target, {fase: "vetrine", conferma: true}));
   $("#up").onclick = e => {
     const f = $("#zip").files[0];
     if (!f) return toast("Scegli prima un file .zip", true);
@@ -474,7 +550,7 @@ V.impostazioni = async m => {
   <div class="cols">
    <div class="card"><h2 style="margin-top:0">🔐 Credenziali</h2>
     ${Object.entries(c).map(([k,v]) => `<label>${esc(v.label)} ${v.impostato ? "✅" : "❌"}</label>
-      <input id="c-${k}" type="${k.includes("password") ? "password" : "text"}" value="${esc(v.valore)}" placeholder="${v.impostato && k.includes("password") ? "•••••••• (salvata — scrivi per sostituire)" : ""}" style="width:100%" autocomplete="off">`).join("")}
+      <input id="c-${k}" type="${v.segreto ? "password" : "text"}" value="${esc(v.valore)}" placeholder="${v.impostato && v.segreto ? "•••••••• (salvata — scrivi per sostituire)" : ""}" style="width:100%" autocomplete="off">`).join("")}
     <div class="row" style="margin-top:12px"><button id="save-c">Salva credenziali</button><button class="sec" id="prova-c">🔌 Prova connessione posta</button></div>
     <p class="small muted">Per l'email conviene una "password per app" o una casella con permessi limitati.</p></div>
    <div class="card"><h2 style="margin-top:0">🛡️ Sicurezza invii</h2>
@@ -490,6 +566,7 @@ V.impostazioni = async m => {
     <h2>🌐 Gestionale & browser</h2>
     <label>Pagina di login</label><input id="s-crm_url_login" value="${esc(s.crm_url_login)}" style="width:100%">
     <label>Pagina lead/contatti</label><input id="s-crm_url_lead" value="${esc(s.crm_url_lead)}" style="width:100%">
+    <label>Quale browser usare</label><select id="s-browser_modalita">${[["personale","Il mio Chrome (profilo che uso) + segnalibro ⭐"],["app","Chrome separato comandato dall'app"]].map(([v,l]) => `<option value="${v}" ${v===(s.browser_modalita||"personale")?"selected":""}>${l}</option>`).join("")}</select>
     <label>Browser</label><select id="s-browser_canale">${["chrome","msedge"].map(x => `<option ${x===s.browser_canale?"selected":""}>${x}</option>`).join("")}</select>
     <h2>🔗 LinkedIn · Indeed</h2>
     <label>Ricerche (separate da virgola)</label><textarea id="s-ricerche_portali" style="min-height:60px">${esc((s.ricerche_portali || []).join(", "))}</textarea>
@@ -507,12 +584,22 @@ V.impostazioni = async m => {
     <h2>⏰ Orari</h2>
     <label>Ricerca annunci</label><input id="s-ricerca_lavoro_ora" value="${esc(s.ricerca_lavoro_ora)}">
     <label>Report mattino / sera</label><input id="s-report_mattino" value="${esc(s.report_mattino)}"> <input id="s-report_sera" value="${esc(s.report_sera)}">
+    <label>Controllo posta (separati da virgola)</label><input id="s-controllo_posta" value="${esc(s.controllo_posta.join(", "))}" style="width:100%">
+    <h2>📅 Agenda e invii</h2>
+    <label>Ore occupate lun-ven (es. 09:00-16:00, separate da virgola)</label><input id="s-orari_occupato" value="${esc(s.orari_occupato.join(", "))}" style="width:100%">
+    <label>Spazi liberi dentro le ore occupate (per te)</label><input id="s-spazi_liberi" value="${esc(s.spazi_liberi.join(", "))}" style="width:100%">
+    <label>Orari da proporre ai clienti</label><input id="s-slot_clienti" value="${esc(s.slot_clienti.join(", "))}" style="width:100%">
+    <label>Durata appuntamento (min) / promemoria (min prima)</label><input id="s-durata_appuntamento" type="number" value="${s.durata_appuntamento}"> <input id="s-promemoria_minuti" type="number" value="${s.promemoria_minuti}">
+    <label>Email con l'agenda del giorno alle</label><input id="s-agenda_mattino" value="${esc(s.agenda_mattino)}">
+    <label>Invio automatico delle bozze approvate alle (lun-ven)</label><input id="s-invio_approvate" value="${esc(s.invio_approvate.join(", "))}" style="width:100%">
+    <label>Link di prenotazione nelle email</label><input id="s-link_prenota" value="${esc(s.link_prenota)}" style="width:100%">
+    <label>API agenda del gestionale</label><input id="s-agenda_api_url" value="${esc(s.agenda_api_url)}" style="width:100%">
    </div></div>
   <div class="row" style="margin-top:16px"><button id="save-s">💾 Salva impostazioni</button></div>`;
   $("#s-auto").onchange = e => run(null, () => api("/api/avvio-automatico", {attivo: e.target.checked}),
     r => r.attivo ? "Partirà all'accensione del PC" : "Avvio automatico disattivato");
   $("#prova-c").onclick = e => provaPosta(e.target);
-  $("#save-c").onclick = e => { const d = {}; Object.keys(c).forEach(k => { const v = $("#c-" + k).value; if (v !== "" || !k.includes("password")) d[k] = v; });
+  $("#save-c").onclick = e => { const d = {}; Object.keys(c).forEach(k => { const v = $("#c-" + k).value; if (v !== "" || !c[k].segreto) d[k] = v; });
     run(e.target, () => api("/api/credenziali", d), "Credenziali salvate nel Gestore credenziali di Windows").then(() => go("impostazioni")); };
   $("#save-s").onclick = e => {
     const lst = id => $(id).value.split(",").map(x => x.trim()).filter(Boolean);
@@ -520,11 +607,14 @@ V.impostazioni = async m => {
       follow_up_giorni: +$("#s-follow_up_giorni").value, modello: $("#s-modello").value, ollama_url: $("#s-ollama_url").value,
       imap_host: $("#s-imap_host").value, imap_port: +$("#s-imap_port").value, smtp_host: $("#s-smtp_host").value, smtp_port: +$("#s-smtp_port").value,
       cartella_bozze: $("#s-cartella_bozze").value, crm_url_login: $("#s-crm_url_login").value, crm_url_lead: $("#s-crm_url_lead").value,
-      browser_canale: $("#s-browser_canale").value, ricerche_portali: lst("#s-ricerche_portali"), portali_auto: $("#s-portali_auto").checked, headline: $("#s-headline").value, firma: $("#s-firma").value,
+      browser_canale: $("#s-browser_canale").value, browser_modalita: $("#s-browser_modalita").value, ricerche_portali: lst("#s-ricerche_portali"), portali_auto: $("#s-portali_auto").checked, headline: $("#s-headline").value, firma: $("#s-firma").value,
       competenze: lst("#s-competenze"), contratti: lst("#s-contratti"), parole_chiave: lst("#s-parole_chiave"),
       progetti_vetrina: $("#s-progetti").value.split("\n").filter(x => x.trim()).map(r => { const [nome, tema, link] = r.split("|").map(x => (x || "").trim()); return {nome, tema, link}; }),
       routine: $("#s-routine").value.split("\n").filter(x => x.trim()).map(r => { const [ora, titolo, vista] = r.split("|").map(x => (x || "").trim()); return titolo ? {ora, titolo, vista: vista || ""} : {ora: "", titolo: ora, vista: ""}; }),
-      ricerca_lavoro_ora: $("#s-ricerca_lavoro_ora").value, report_mattino: $("#s-report_mattino").value, report_sera: $("#s-report_sera").value};
+      ricerca_lavoro_ora: $("#s-ricerca_lavoro_ora").value, report_mattino: $("#s-report_mattino").value, report_sera: $("#s-report_sera").value,
+      controllo_posta: lst("#s-controllo_posta"), orari_occupato: lst("#s-orari_occupato"), spazi_liberi: lst("#s-spazi_liberi"), slot_clienti: lst("#s-slot_clienti"),
+      durata_appuntamento: +$("#s-durata_appuntamento").value, promemoria_minuti: +$("#s-promemoria_minuti").value, agenda_mattino: $("#s-agenda_mattino").value,
+      invio_approvate: lst("#s-invio_approvate"), link_prenota: $("#s-link_prenota").value, agenda_api_url: $("#s-agenda_api_url").value};
     run(e.target, () => api("/api/impostazioni", d), "Impostazioni salvate").then(refreshStato);
   };
 };

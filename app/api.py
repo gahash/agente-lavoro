@@ -10,8 +10,8 @@ from fastapi.staticfiles import StaticFiles
 
 from .core import db, llm, vault
 from .core.config import APP_NAME, DATA, UI_DIR, VERSION, load_settings, save_settings
-from .modules import (assistente, attivita, bozze, browser, lavoro, pianificatore, pmi, portali, posta, progetti,
-                      report, sistema)
+from .modules import (agenda, assistente, attivita, bozze, browser, github_massivo, lavoro, pianificatore, pmi, ponte,
+                      portali, posta, progetti, report, sistema)
 
 # token di sessione: solo la finestra dell'app lo conosce (protegge da altri siti aperti nel browser)
 TOKEN = secrets.token_urlsafe(24)
@@ -48,7 +48,8 @@ A = [Depends(auth)]
 # ---------- stato e impostazioni ----------
 @app.get("/api/stato", dependencies=A)
 def stato():
-    return {"numeri": report.numeri(), "modelli": llm.modelli(), "impostazioni": load_settings(),
+    return {"numeri": report.numeri(), "modelli": llm.modelli(), "download_modello": llm.DOWNLOAD,
+            "impostazioni": load_settings(),
             "credenziali": vault.stato(), "pianificazione": pianificatore.stato(), "cartella_dati": str(DATA),
             "avvio_automatico": sistema.avvio_automatico_attivo()}
 
@@ -226,6 +227,36 @@ def pipe_follow(pid: int):
     return ok(bozze.follow_up, pid)
 
 
+@app.post("/api/pipeline/{pid}/appuntamento", dependencies=A)
+def pipe_appuntamento(pid: int, data: dict = Body(...)):
+    return ok(agenda.fissa_da_pipeline, pid, str(data.get("inizio", "")).replace("T", " ")[:16],
+              data.get("tipo") or "call", data.get("luogo") or "", bool(data.get("conferma", True)))
+
+
+# ---------- agenda (gestionale del sito) ----------
+@app.get("/api/agenda", dependencies=A)
+def agenda_lista():
+    def f():
+        try:
+            app_ = agenda.elenco()
+        except agenda.AgendaNonCollegata as e:
+            return {"collegata": False, "errore": str(e), "appuntamenti": [], "slot": []}
+        slot = agenda.slot_liberi(5, esistenti=app_)
+        return {"collegata": True, "appuntamenti": app_,
+                "slot": [{"valore": t.strftime(agenda.FMT), "testo": agenda.formatta(t)} for t in slot]}
+    return ok(f)
+
+
+@app.post("/api/agenda/promemoria", dependencies=A)
+def agenda_promemoria():
+    return ok(lambda: {"ok": True, "inviati": agenda.promemoria()})
+
+
+@app.post("/api/invio-approvate", dependencies=A)
+def bozze_invia_approvate():
+    return ok(posta.invia_approvate)
+
+
 @app.post("/api/export", dependencies=A)
 def export():
     f = ok(report.esporta_excel)
@@ -307,8 +338,16 @@ def _portale(p: str) -> str:
     return p
 
 
+PERS = "Aperto nel tuo Chrome. "
+SEGN = "premi il segnalibro ⭐ Invia ad Agente Lavoro"
+
+
 @app.post("/api/portali/{p}/collega", dependencies=A)
 def portale_collega(p: str):
+    if ponte.personale():
+        ponte.apri(portali.PORTALI[_portale(p)]["home"])
+        return {"ok": True, "collegato": False,
+                "messaggio": PERS + "Se non sei già dentro, accedi lì: la sessione è quella del tuo profilo."}
     return ok(portali.collega, _portale(p))
 
 
@@ -319,6 +358,9 @@ def portali_stato():
 
 @app.post("/api/portali/{p}/cerca", dependencies=A)
 def portale_cerca(p: str, data: dict = Body(default={})):
+    if ponte.personale():
+        ponte.apri(portali.url_ricerca(_portale(p), data.get("parole") or load_settings()["ricerche_portali"][0]))
+        return {"ok": True, "messaggio": PERS + "Quando la lista degli annunci è caricata, " + SEGN + "."}
     return ok(portali.cerca_e_importa, _portale(p), data.get("parole") or load_settings()["ricerche_portali"][0])
 
 
@@ -329,6 +371,12 @@ def portali_importa():
 
 @app.post("/api/lavoro/{oid}/analizza", dependencies=A)
 def lavoro_analizza(oid: int):
+    if ponte.personale():
+        o = db.q("SELECT link FROM opportunita WHERE id=?", (oid,))
+        if not o or not o[0]["link"]:
+            raise HTTPException(404, "Annuncio senza link")
+        ponte.apri(o[0]["link"])
+        return {"ok": True, "messaggio": PERS + "Quando l'annuncio è caricato, " + SEGN + " per valutarlo."}
     return ok(portali.analizza_opportunita, oid)
 
 
@@ -338,6 +386,8 @@ def br_apri(data: dict = Body(...)):
     url = data["url"]
     if not url.startswith(("http://", "https://")):
         raise HTTPException(400, "URL non valido")
+    if ponte.personale():
+        return ponte.apri(url)
     return ok(browser.apri, url)
 
 
@@ -354,6 +404,8 @@ def br_google():
 
 @app.post("/api/browser/avvia", dependencies=A)
 def br_avvia():
+    if ponte.personale():
+        return ponte.apri("https://www.google.com/")
     ok(browser.avvia_browser)
     return browser.stato_browser()
 
@@ -370,12 +422,34 @@ def br_chiudi():
 
 @app.post("/api/crm/login", dependencies=A)
 def crm_login():
+    if ponte.personale():
+        s = load_settings()
+        ponte.apri(s["crm_url_lead"] or s["crm_url_login"])
+        return {"ok": True, "collegato": False,
+                "messaggio": PERS + "Accedi se serve, apri la pagina dei lead e " + SEGN + "."}
     return ok(browser.login_crm)
 
 
 @app.post("/api/crm/leggi", dependencies=A)
 def crm_leggi(data: dict = Body(default={})):
     return ok(browser.leggi_tabelle, data.get("url") or None)
+
+
+# ---------- ponte con il tuo Chrome (segnalibro) ----------
+@app.get("/ponte", response_class=HTMLResponse)
+def ponte_pagina():
+    return ponte.PAGINA.replace("__TOKEN__", TOKEN)
+
+
+@app.post("/api/ponte", dependencies=A)
+def ponte_ricevi(data: dict = Body(...)):
+    return ok(ponte.ricevi, data)
+
+
+@app.get("/api/ponte/segnalibro", dependencies=A)
+def ponte_segnalibro(request: Request):
+    return {"href": ponte.segnalibro(ponte.ORIGINE), "personale": ponte.personale(),
+            "porta_ok": request.url.port == ponte.PORTA}
 
 
 @app.get("/api/crm/lead", dependencies=A)
@@ -389,6 +463,33 @@ def _err_progetti(fn, *a, **kw):
         return ok(fn, *a, **kw)
     except HTTPException as e:
         raise HTTPException(400 if e.status_code == 500 else e.status_code, e.detail)
+
+
+@app.get("/api/github/stato", dependencies=A)
+def github_stato():
+    return github_massivo.stato()
+
+
+@app.post("/api/github/collega", dependencies=A)
+def github_collega():
+    return ok(github_massivo.collega)
+
+
+@app.post("/api/github/avvia", dependencies=A)
+def github_avvia(data: dict = Body(...)):
+    fase = data.get("fase")
+    if fase not in ("importa", "privati", "vetrine", "tutto"):
+        raise HTTPException(400, "Fase sconosciuta")
+    if fase in ("privati", "vetrine", "tutto") and data.get("conferma") is not True:
+        raise HTTPException(400, "Serve la conferma esplicita")
+    kw = {}
+    if fase == "importa":
+        from pathlib import Path as _P
+        cart = _P(str(data.get("cartella") or "~/Desktop/GitHub_Ready")).expanduser()
+        if not cart.is_dir():
+            raise HTTPException(400, f"Cartella non trovata: {cart}")
+        kw["radice"] = cart
+    return github_massivo.avvia(fase, **kw)
 
 
 @app.get("/api/progetti", dependencies=A)

@@ -3,9 +3,12 @@ Tutte finiscono in stato 'da_approvare'. L'invio avviene solo da modules/posta.i
 from __future__ import annotations
 
 import re
+from datetime import date
+from difflib import SequenceMatcher
 
 from ..core import db, llm, safety
 from ..core.config import load_settings
+from . import agenda
 
 
 def _profilo(s: dict) -> str:
@@ -38,7 +41,35 @@ def pulisci(corpo: str) -> str:
     return CHIUSURE.sub("", c).strip().rstrip(",")
 
 
+FRASE_RX = re.compile(r"(?<=[.!?])\s+")
+
+
+def _parole(frase: str) -> list[str]:
+    return re.findall(r"\w+", frase.lower())
+
+
+def togli_ripetizioni(corpo: str) -> tuple[str, list[str]]:
+    """Toglie le frasi che ripetono (quasi alla lettera) una frase precedente. Restituisce testo e frasi tolte."""
+    viste, tolte, paragrafi = [], [], []
+    for par in (corpo or "").split("\n"):
+        tenute = []
+        for frase in FRASE_RX.split(par):
+            w = _parole(frase)
+            if len(w) >= 6 and any(SequenceMatcher(None, w, v).ratio() >= 0.7 for v in viste):
+                tolte.append(frase.strip())
+                continue
+            if len(w) >= 6:
+                viste.append(w)
+            tenute.append(frase)
+        paragrafi.append(" ".join(tenute))
+    return "\n".join(paragrafi), tolte
+
+
 def _salva(tipo, destinatario, oggetto, corpo, rif_tabella, rif_id, in_risposta_a="", note="") -> int:
+    corpo, tolte = togli_ripetizioni(corpo)
+    if tolte:
+        avviso = "⚠️ Tolte frasi ripetute: " + " / ".join(t[:80] for t in tolte)
+        note = f"{note} | {avviso}" if note else avviso
     return db.insert("bozze", {"tipo": tipo, "destinatario": destinatario or "", "oggetto": oggetto,
                                "corpo": corpo, "rif_tabella": rif_tabella, "rif_id": rif_id,
                                "in_risposta_a": in_risposta_a, "note": note}, ignore=False)
@@ -115,7 +146,7 @@ def risposta_email(posta_id: int) -> dict:
     user = f"PROFILO:\n{_profilo(s)}\n\nEMAIL RICEVUTA:\n" + llm.dati(
         f"Da: {m['mittente']}\nOggetto: {m['oggetto']}\n{m['anteprima']}", 4000)
     d = llm.chat_json(sys, user, max_tokens=450)
-    corpo = pulisci(d.get("corpo", "")) + "\n\nCordiali saluti,\n" + s["firma"]
+    corpo = agenda.riempi_orari(pulisci(d.get("corpo", ""))) + "\n\nCordiali saluti,\n" + s["firma"]
     ogg = d.get("oggetto") or ("Re: " + (m["oggetto"] or ""))
     bid = _salva("risposta", m["mittente"], ogg, corpo, "posta", posta_id, in_risposta_a=m["message_id"] or "")
     return {"ok": True, "id": bid}
@@ -126,8 +157,12 @@ def follow_up(pipe_id: int) -> dict:
     s = load_settings()
     if p["solleciti"] >= s["max_solleciti"]:
         return {"ok": False, "errore": f"Raggiunto il massimo di {s['max_solleciti']} solleciti."}
-    corpo = (f"Buongiorno,\n\nriprendo il mio messaggio del {(p['ultimo_contatto'] or '')[:10]} nel caso fosse sfuggito. "
-             "Resto disponibile per una breve call conoscitiva, anche di 15 minuti, nei prossimi giorni.\n\n"
-             f"Un saluto,\n{s['firma']}")
+    try:
+        quando = "del " + date.fromisoformat((p["ultimo_contatto"] or "")[:10]).strftime("%d/%m/%Y")
+    except ValueError:
+        quando = "precedente"
+    corpo = (f"Buongiorno,\n\nriprendo il mio messaggio {quando} nel caso fosse sfuggito. "
+             "Resto disponibile per una breve call conoscitiva, anche di 15 minuti, nei prossimi giorni"
+             f"{agenda.frase_orari()}\n\nUn saluto,\n{s['firma']}")
     bid = _salva("follow_up", p["contatto"], f"Re: {p['azienda']}", corpo, "pipeline", pipe_id)
     return {"ok": True, "id": bid}

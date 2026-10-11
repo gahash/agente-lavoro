@@ -13,8 +13,9 @@ SERVICE = "AgenteLavoro-GasparePettinati"
 CAMPI = {
     "imap_user": "Email (utente IMAP/SMTP)",
     "imap_password": "Password email / password per app",
+    "gestionale_token": "Token agenda del gestionale (AGENTE_API_TOKEN in config.php)",
 }
-SEGRETI = {"imap_password"}
+SEGRETI = {"imap_password", "gestionale_token"}
 
 
 def set_cred(key: str, value: str) -> None:
@@ -38,6 +39,6 @@ def stato() -> dict:
     out = {}
     for k, label in CAMPI.items():
         v = get_cred(k)
-        out[k] = {"label": label, "impostato": bool(v),
+        out[k] = {"label": label, "impostato": bool(v), "segreto": k in SEGRETI,
                   "valore": (v if (v and k not in SEGRETI) else "")}
     return out

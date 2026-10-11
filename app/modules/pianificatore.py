@@ -1,12 +1,13 @@
-"""Routine automatiche mentre l'app è aperta: posta, ricerca lavoro, report.
-Le routine preparano solo dati e bozze: non inviano mai nulla."""
+"""Routine automatiche mentre l'app è aperta: posta, ricerca lavoro, report, agenda.
+Le routine preparano dati e bozze; inviano solo le bozze già approvate da Gaspare
+e le email di servizio a Gaspare stesso (agenda del giorno, promemoria degli appuntamenti)."""
 from __future__ import annotations
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from ..core import db
 from ..core.config import load_settings
-from . import attivita, lavoro, posta, report
+from . import agenda, attivita, lavoro, posta, report
 
 sched = BackgroundScheduler(timezone="Europe/Rome")
 
@@ -20,6 +21,18 @@ def _safe(nome, fn, *a, **kw):
     return run
 
 
+def _safe_agenda(fn):
+    """Come _safe, ma senza riempire il registro ogni 5 minuti se il gestionale non è ancora collegato."""
+    def run():
+        try:
+            fn()
+        except agenda.AgendaNonCollegata:
+            pass
+        except Exception as e:
+            db.log("agenda", f"{fn.__name__}: {e}", "errore")
+    return run
+
+
 def _hm(s: str) -> tuple[int, int]:
     h, m = s.split(":")
     return int(h), int(m)
@@ -29,6 +42,9 @@ def portali_routine() -> None:
     """Se attivato: importa annunci da LinkedIn/Indeed per le prime 2 ricerche, solo se già collegati."""
     s = load_settings()
     if not s.get("portali_auto"):
+        return
+    if s.get("browser_modalita", "personale") == "personale":
+        db.log("portali", "Importazione automatica saltata: con il tuo Chrome si importa con il segnalibro")
         return
     from . import portali
     import random
@@ -62,6 +78,13 @@ def avvia() -> None:
     sched.add_job(_safe("report", report.report, "sera"), "cron", hour=h, minute=m, id="rep_s")
     sched.add_job(_safe("report", report.report, "settimanale"), "cron", day_of_week="fri", hour=17, id="rep_w")
     sched.add_job(_safe("attivita", attivita.genera), "cron", hour=7, minute=0, id="attivita")
+    for i, ora in enumerate(s["invio_approvate"]):
+        h, m = _hm(ora)
+        sched.add_job(_safe("invio", posta.invia_approvate), "cron", day_of_week="mon-fri", hour=h, minute=m,
+                      id=f"invio{i}")
+    h, m = _hm(s["agenda_mattino"])
+    sched.add_job(_safe("agenda", agenda.email_mattino), "cron", hour=h, minute=m, id="agenda")
+    sched.add_job(_safe_agenda(agenda.promemoria), "interval", minutes=5, id="promemoria")
     if not sched.running:
         sched.start()
 
