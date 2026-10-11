@@ -50,6 +50,7 @@ DEFAULTS: dict = {
     "competenze": ["Python", "FastAPI", "Node.js", "TypeScript", "React", "PHP", "MySQL", "PostgreSQL",
                    "Docker", "Linux", "LLM / agenti AI", "WhatsApp API", "VoIP / agenti vocali",
                    "CRM e gestionali", "Integrazioni API", "React Native / Expo", "Android/Kotlin"],
+    "solo_remoto_o_collaborazione": True,   # annunci: solo smart working dall'Italia o collaborazioni freelance/P.IVA
     "parole_chiave": ["python", "fastapi", "node", "typescript", "react", "php", "laravel", "full stack",
                       "fullstack", "backend", "ai", "llm", "automation", "api", "integrations", "django"],
     "progetti_vetrina": [

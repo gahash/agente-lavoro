@@ -137,6 +137,31 @@ def ricerche_browser() -> list[dict]:
 OK_LOC = re.compile(r"mondo|world|anywhere|global|europe|europa|\beu\b|emea|ital|cet|gmt\+[12]|100%|remote", re.I)
 
 
+USA_ONLY = re.compile(r"\b(us only|usa only|u\.s\. only|americas only|must be based in the us|us citizens?)\b", re.I)
+COLLAB_RX = re.compile(r"freelance|contractor|\bcontract\b|collaborazion|consulenz|p\.? ?iva|partita iva|\bb2b\b|"
+                       r"a progetto|prestazione occasionale|ritenuta d'acconto", re.I)
+
+
+def ammesso(o: dict) -> tuple[bool, str]:
+    """Si tengono solo i lavori completamente da remoto aperti all'Italia e le collaborazioni (freelance/P.IVA)."""
+    if not load_settings().get("solo_remoto_o_collaborazione", True):
+        return True, ""
+    testo = " ".join(str(o.get(k) or "") for k in ("ruolo", "tipo", "requisiti", "descrizione"))
+    if COLLAB_RX.search(testo):
+        return True, "collaborazione"
+    rem = str(o.get("remoto") or "").strip().lower()
+    if not rem.startswith(("sì", "si", "yes", "remote", "100%")):
+        return False, f"non da remoto ({o.get('remoto') or 'non indicato'})"
+    loc = rem[rem.find("(") + 1:rem.rfind(")")] if "(" in rem else ""
+    if loc and not OK_LOC.search(loc):
+        return False, f"remoto solo per: {loc[:60]}"
+    if USA_ONLY.search(testo):
+        return False, "remoto solo per residenti USA"
+    if re.search(r"ibrid|hybrid", rem):
+        return False, "ibrido"
+    return True, "smart working"
+
+
 def pre_punteggio(o: dict, s: dict) -> tuple[float, list[str]]:
     testo = " ".join(str(o.get(k) or "") for k in ("ruolo", "requisiti", "descrizione")).lower()
     motivi, p = [], 0.0
@@ -149,7 +174,7 @@ def pre_punteggio(o: dict, s: dict) -> tuple[float, list[str]]:
         else:
             p -= 3
             motivi.append(f"remoto ma solo per: {loc[:60]}")
-        if re.search(r"\b(us only|usa only|u\.s\. only|americas only|must be based in the us|us citizens?)\b", testo):
+        if USA_ONLY.search(testo):
             p -= 2
             motivi.append("richiesta residenza USA")
     hit = [k for k in s["parole_chiave"] if re.search(rf"\b{re.escape(k)}\b", testo)]
@@ -179,7 +204,7 @@ def valuta_con_ai(o: dict) -> dict:
            "Rispondi SOLO in JSON: {\"punteggio\": numero 1-10, \"motivazione\": \"max 2 frasi in italiano\", "
            "\"sospetto\": true/false, \"requisiti_chiave\": \"max 6 voci separate da virgola\"}")
     user = (f"Candidato: {s['headline']}. Competenze: {', '.join(s['competenze'])}. "
-            f"Contratti accettati: {', '.join(s['contratti'])}. Lavoro solo da remoto.\n\nAnnuncio:\n"
+            f"Contratti accettati: {', '.join(s['contratti'])}. Accetta solo lavori completamente da remoto (smart working dall'Italia) o collaborazioni freelance/P.IVA.\n\nAnnuncio:\n"
             + llm.dati(f"Azienda: {o.get('azienda')}\nRuolo: {o.get('ruolo')}\nRemoto: {o.get('remoto')}\n"
                        f"Compenso: {o.get('compenso')}\nTipo: {o.get('tipo')}\n{o.get('descrizione')}", 3500))
     return llm.chat_json(sys, user, max_tokens=250)
@@ -202,9 +227,12 @@ def cerca(usa_ai: bool = True, max_ai: int = 8, fonti: list[str] | None = None) 
     except Exception as e:
         errori.append(f"Remotive: {e}")
 
-    candidati_ai = []
+    candidati_ai, esclusi = [], 0
     for o in raccolti:
         if not o.get("link") or not o.get("ruolo"):
+            continue
+        if not ammesso(o)[0]:
+            esclusi += 1
             continue
         sosp = safety.segnali_sospetti(f"{o.get('descrizione')} {o.get('azienda')}")
         p, motivi = pre_punteggio(o, s)
@@ -234,8 +262,22 @@ def cerca(usa_ai: bool = True, max_ai: int = 8, fonti: list[str] | None = None) 
             except Exception as e:
                 errori.append(f"AI: {e}")
                 break
-    db.log("lavoro", f"Ricerca: {len(raccolti)} annunci letti, {nuovi} nuovi, {valutati} valutati con AI")
-    return {"letti": len(raccolti), "nuovi": nuovi, "valutati_ai": valutati, "errori": errori}
+    db.log("lavoro", f"Ricerca: {len(raccolti)} annunci letti, {esclusi} esclusi (né remoto né collaborazione), "
+                     f"{nuovi} nuovi, {valutati} valutati con AI")
+    return {"letti": len(raccolti), "esclusi": esclusi, "nuovi": nuovi, "valutati_ai": valutati, "errori": errori}
+
+
+def scarta_non_ammessi() -> int:
+    """Mette in 'Scartato' gli annunci ancora da valutare che non sono né da remoto né collaborazioni."""
+    n = 0
+    for o in db.q("SELECT * FROM opportunita WHERE stato='Nuovo'"):
+        ok_, motivo = ammesso(o)
+        if not ok_:
+            db.update("opportunita", o["id"], {"stato": "Scartato", "motivazione": f"Escluso: {motivo} | {o['motivazione'] or ''}"[:1000]})
+            n += 1
+    if n:
+        db.log("lavoro", f"{n} annunci scartati: né da remoto né collaborazioni")
+    return n
 
 
 def valuta_testo(testo: str, o: dict) -> dict:
@@ -260,9 +302,12 @@ def valuta_testo(testo: str, o: dict) -> dict:
         sosp += ["segnalato dall'AI"] if v.get("sospetto") is True else []
     except llm.LLMError:
         pass
+    ok_, motivo = ammesso(agg)
+    extra = {} if ok_ else {"stato": "Scartato"}
     return {k: agg[k] for k in ("tipo", "remoto", "compenso", "requisiti", "contatto", "descrizione")} | {
         "punteggio": 0 if sosp else p, "sospetto": 1 if sosp else 0,
-        "motivazione": ("SOSPETTO: " + ", ".join(sosp)) if sosp else "; ".join(motivi)}
+        "motivazione": ("SOSPETTO: " + ", ".join(sosp)) if sosp else
+                       ("; ".join(motivi) if ok_ else f"Escluso: {motivo} | " + "; ".join(motivi))} | extra
 
 
 def analizza_testo_annuncio(testo: str, link: str = "") -> dict:
@@ -287,5 +332,8 @@ def analizza_testo_annuncio(testo: str, link: str = "") -> dict:
         pass
     o.update({"punteggio": 0 if sosp else p, "sospetto": 1 if sosp else 0,
               "motivazione": ("SOSPETTO: " + ", ".join(sosp)) if sosp else "; ".join(motivi)})
+    ok_, motivo = ammesso(o)
+    if not ok_:
+        o.update({"stato": "Scartato", "motivazione": f"Escluso: {motivo} | {o['motivazione']}"})
     rid = db.insert("opportunita", o)
     return {"ok": True, "id": rid, **o}

@@ -194,6 +194,8 @@ def salva_cards(portale: str, cards: list[dict], url: str = "", filtro_remoto: b
         o = {"fonte": PORTALI[portale]["nome"], "uid": f"{portale}-{c['id']}", "azienda": c.get("azienda", ""),
              "ruolo": c["ruolo"], "link": link, "remoto": remoto, "compenso": c.get("compenso", ""), "tipo": "",
              "requisiti": "", "descrizione": c.get("extra", ""), "contatto": ""}
+        if not lavoro.ammesso(o)[0]:                 # né smart working né collaborazione
+            continue
         sosp = safety.segnali_sospetti(testo)
         p, motivi = lavoro.pre_punteggio(o, s)
         motivi.append("da verificare: premi 'Analizza' per leggere l'annuncio completo")
