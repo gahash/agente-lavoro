@@ -18,9 +18,13 @@ CAMPI = {
 SEGRETI = {"imap_password", "gestionale_token"}
 
 
+_cache: dict[str, str | None] = {}
+
+
 def set_cred(key: str, value: str) -> None:
     if key not in CAMPI:
         raise KeyError(key)
+    _cache.pop(key, None)
     if value:
         keyring.set_password(SERVICE, key, value)
     else:
@@ -31,7 +35,10 @@ def set_cred(key: str, value: str) -> None:
 
 
 def get_cred(key: str) -> str | None:
-    return keyring.get_password(SERVICE, key)
+    """Letta dal Portachiavi una volta per avvio: le routine ogni 5 minuti non lo interrogano di nuovo."""
+    if key not in _cache:
+        _cache[key] = keyring.get_password(SERVICE, key)
+    return _cache[key]
 
 
 def stato() -> dict:

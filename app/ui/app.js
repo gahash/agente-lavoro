@@ -353,7 +353,7 @@ V.agenda = async m => {
   m.innerHTML = `<h1>Agenda</h1><p class="sub">Appuntamenti del gestionale del sito. Riunioni ${esc(s.orari_occupato.join(", "))} · spazi liberi ${esc(s.spazi_liberi.join(", "))} ·
     promemoria via email ${s.promemoria_minuti} minuti prima (se l'appuntamento non ne ha uno suo) · agenda del giorno via email alle ${esc(s.agenda_mattino)}.</p>
   ${ag.collegata ? "" : `<div class="warnbox">${esc(ag.errore)} Vedi le istruzioni in <code>gestionale/api/agenda.php</code>.</div>`}
-  <div class="row"><button class="sec" id="prom">⏰ Controlla promemoria ora</button><button class="sec" id="inv">📤 Invia ora le approvate</button>
+  <div class="row"><button class="sec" id="prom">⏰ Controlla promemoria ora</button><button class="sec" id="inv">📤 Invia ora le approvate</button><button class="sec" id="caccia">🎯 Cerca clienti ora</button>
     <a class="small" href="#" id="gest">Apri l'agenda del gestionale ↗</a></div>
   <div class="cols"><div class="card"><h2 style="margin-top:0">Prossimi 14 giorni</h2>
     ${ag.appuntamenti.map(a => `<p><b>${esc(dt(a.inizio.replace(" ", "T")))}</b> ${esc(a.titolo)}<br><span class="small muted">${esc([a.tipo, a.cliente, a.luogo].filter(Boolean).join(" · "))}</span></p>`).join("") || `<p class="muted">Nessun appuntamento.</p>`}</div>
@@ -362,6 +362,8 @@ V.agenda = async m => {
     <p class="small muted">Finiscono da soli nei follow-up e al posto di [ORARI] nelle risposte. Per fissarne uno: Pipeline → 📅 Fissa.</p></div></div>`;
   $("#prom").onclick = e => run(e.target, () => api("/api/agenda/promemoria", {}), r => `Promemoria inviati: ${r.inviati}`);
   $("#inv").onclick = e => run(e.target, () => api("/api/invio-approvate", {}), r => `Inviate: ${r.inviate}` + (r.non_inviate.length ? ` — non inviate: ${r.non_inviate.length} (vedi Registro)` : "")).then(refreshStato);
+  $("#caccia").onclick = e => run(e.target, () => api("/api/caccia", {}),
+    r => `${r.nuove_aziende} aziende nuove, ${r.analizzate} analizzate, ${r.proposte} proposte e ${r.candidature} candidature in Da approvare`).then(refreshStato);
   $("#gest").onclick = e => { e.preventDefault(); api("/api/browser/apri", {url: s.crm_url_lead + "index.php?tab=appuntamenti"}).catch(err => toast(err.message, true)); };
 };
 

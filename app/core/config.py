@@ -102,6 +102,16 @@ DEFAULTS: dict = {
     "durata_appuntamento": 30,
     "promemoria_minuti": 30,                    # se l'appuntamento nel gestionale non ne ha uno
     "agenda_mattino": "07:45",                  # email con l'agenda del giorno
+    # caccia automatica (lun-ven): trova aziende/annunci e prepara le bozze da approvare
+    "caccia_ore": ["07:00", "15:00"],
+    "caccia_citta": ["Bergamo", "Milano"],
+    "caccia_settori": ["Farmacie", "Studi medici e dentistici", "Ristoranti", "Hotel e B&B", "Autofficine e concessionari",
+                       "Palestre", "Agenzie immobiliari", "Studi professionali (commercialisti, avvocati)",
+                       "Centri estetici e parrucchieri"],
+    "caccia_analisi": 10,                       # siti analizzati per giro (l'AI locale è lenta: non esagerare)
+    "caccia_proposte_giorno": 10,               # proposte PMI scritte al giorno (sempre entro max_pmi_giorno)
+    "caccia_candidature_giorno": 3,
+    "caccia_interesse_min": 6,                  # su 10, dall'analisi del sito
     "invio_approvate": ["08:55", "11:15", "13:55", "16:20", "18:40"],  # partono solo le bozze già approvate
 }
 
