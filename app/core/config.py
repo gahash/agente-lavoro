@@ -109,6 +109,7 @@ DEFAULTS: dict = {
     "caccia_settori": ["Farmacie", "Studi medici e dentistici", "Ristoranti", "Hotel e B&B", "Autofficine e concessionari",
                        "Palestre", "Agenzie immobiliari", "Studi professionali (commercialisti, avvocati)",
                        "Centri estetici e parrucchieri"],
+    "caccia_solo_analisi": True,                # trova e analizza le aziende, senza scrivere proposte né candidature
     "caccia_analisi": 4,                        # siti analizzati per giro: sul Mac Intel ogni analisi richiede minuti
     "caccia_proposte_giorno": 10,               # proposte PMI scritte al giorno (sempre entro max_pmi_giorno)
     "caccia_candidature_giorno": 3,

@@ -676,7 +676,8 @@ async function controllaCaccia() {
     $("#cb-titolo").textContent = r.ok === false ? "⚠️ Ricerca clienti interrotta" : "✅ Ricerca clienti completata";
     $("#cb-perc").textContent = "100%"; $("#cb-fill").style.width = "100%";
     $("#cb-det").textContent = r.ok === false ? r.errore :
-      `${r.nuove_aziende} aziende nuove, ${r.analizzate} siti analizzati, ${r.proposte} proposte e ${r.candidature} candidature in Da approvare.`;
+      `${r.nuove_aziende} aziende nuove, ${r.analizzate} siti analizzati` +
+      (STATO.impostazioni.caccia_solo_analisi ? " — le trovi in Clienti PMI." : `, ${r.proposte} proposte e ${r.candidature} candidature in Da approvare.`);
     refreshStato().catch(() => {});
     setTimeout(() => bar.classList.add("hidden"), 30000);
   }

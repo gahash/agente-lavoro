@@ -24,7 +24,7 @@ FASI = {"ricerca": (0, 10), "analisi": (10, 60), "proposte": (60, 90), "candidat
 
 
 def _passo(fase: str, i: int, n: int, dettaglio: str) -> None:
-    a, b = FASI[fase]
+    a, b = (10, 100) if fase == "analisi" and load_settings().get("caccia_solo_analisi") else FASI[fase]
     STATO.update({"percentuale": round(a + (b - a) * (i / n if n else 1)), "fase": fase, "dettaglio": dettaglio,
                   "passo_dal": db.now()})
 
@@ -93,6 +93,12 @@ def _giro() -> dict:
             esito["analizzate"] += bool(pmi.analizza(a["id"]).get("ok"))
         except Exception as e:
             esito["errori"].append(f"analisi {a['id']}: {e}")
+
+    if s.get("caccia_solo_analisi"):          # niente bozze: le proposte le fa partire Gaspare da Clienti PMI
+        db.log("caccia", f"Giro: {settore} / {citta} — {esito['nuove_aziende']} aziende nuove, {esito['analizzate']} "
+                         "siti analizzati (solo analisi, nessuna bozza)"
+               + (f" — {len(esito['errori'])} errori: {'; '.join(esito['errori'])[:600]}" if esito["errori"] else ""))
+        return {"ok": True, **esito}
 
     # 3) proposte: solo con email, interesse sufficiente, entro il tetto giornaliero e la quota anti-spam
     posti = min(int(s["caccia_proposte_giorno"]) - _bozze_oggi("proposta_pmi"), safety.pmi_quota_residua())

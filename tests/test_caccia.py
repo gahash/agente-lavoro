@@ -34,6 +34,7 @@ class CacciaTests(unittest.TestCase):
                 return [{"id": 10}]
             raise AssertionError(sql)
 
+        config.save_settings({"caccia_solo_analisi": False})
         with patch.object(caccia.db, "q", side_effect=q), patch.object(caccia.db, "log"), \
              patch.object(caccia.pmi, "cerca_osm", return_value={"nuove": 4}), \
              patch.object(caccia.safety, "pmi_quota_residua", return_value=1), \
@@ -48,3 +49,18 @@ class CacciaTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SoloAnalisiTests(unittest.TestCase):
+    def test_non_scrive_bozze(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(config, "SETTINGS_FILE", Path(tmp) / "s.json"):
+            config.save_settings({"caccia_solo_analisi": True})
+            q = lambda sql, params=(): [{"n": 0}] if "COUNT" in sql else ([{"id": 1}] if "stato='Nuovo'" in sql else [{"nome": "X"}])
+            with patch.object(caccia.db, "q", side_effect=q), patch.object(caccia.db, "log"), \
+                 patch.object(caccia.pmi, "cerca_osm", return_value={"nuove": 2}), \
+                 patch.object(caccia.pmi, "analizza", return_value={"ok": True}), \
+                 patch.object(caccia.bozze, "proposta_pmi") as prop, patch.object(caccia.bozze, "candidatura") as cand:
+                r = caccia.giro()
+        self.assertEqual(1, r["analizzate"])
+        prop.assert_not_called()
+        cand.assert_not_called()
