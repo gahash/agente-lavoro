@@ -80,5 +80,17 @@ class SlotTests(_SettingsTemporanee):
         chiama.assert_not_called()
 
 
+
+class RifinituraTests(unittest.TestCase):
+    def test_corregge_gli_errori_ricorrenti(self):
+        c = bozze.rifinisci("Buongiorno,\n\nHo visto una chatbot e una demo di 2 a 20 minuti per i dei client: ok")
+        self.assertEqual("Buongiorno,\n\nho visto un chatbot e una demo di 20 minuti per i dei clienti: ok", c)
+
+    def test_segnala_le_promesse_rischiose(self):
+        p = bozze.promesse_rischiose("Demo gratuita, senza costi iniziali. Posso iniziare lunedì prossimo.")
+        self.assertEqual(["gratuit", "lunedì prossim", "senza costi"], p)
+        self.assertEqual([], bozze.promesse_rischiose("Una demo di 20 minuti, senza impegno."))
+
+
 if __name__ == "__main__":
     unittest.main()

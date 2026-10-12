@@ -65,11 +65,34 @@ def togli_ripetizioni(corpo: str) -> tuple[str, list[str]]:
     return "\n".join(paragrafi), tolte
 
 
+PROMESSE_RX = re.compile(r"gratuit|gratis|senza costi|costo zero|nessun costo|garantit|subito dopo|"
+                         r"modifiche al (codice|sito)|(lunedì|martedì|mercoledì|giovedì|venerdì|sabato|domenica) prossim|"
+                         r"entro \d+ (giorni|ore|settimane)|\d+ ?%", re.I)
+
+
+def rifinisci(corpo: str) -> str:
+    """Corregge gli errori ricorrenti del modello locale."""
+    c = re.sub(r"^(Buongiorno|Buonasera|Gentile [^,\n]+),\n\n(\w)", lambda m: f"{m.group(1)},\n\n{m.group(2).lower()}", corpo or "")
+    c = re.sub(r"demo di \d+ a (\d+) minuti", r"demo di \1 minuti", c)
+    c = re.sub(r"\buna chatbot\b", "un chatbot", c)
+    c = re.sub(r"\bdei client:", "dei clienti:", c)
+    return c
+
+
+def promesse_rischiose(corpo: str) -> list[str]:
+    return sorted({m.group(0).lower() for m in PROMESSE_RX.finditer(corpo or "")})
+
+
 def _salva(tipo, destinatario, oggetto, corpo, rif_tabella, rif_id, in_risposta_a="", note="") -> int:
-    corpo, tolte = togli_ripetizioni(corpo)
+    corpo, tolte = togli_ripetizioni(rifinisci(corpo))
+    avvisi = []
     if tolte:
-        avviso = "⚠️ Tolte frasi ripetute: " + " / ".join(t[:80] for t in tolte)
-        note = f"{note} | {avviso}" if note else avviso
+        avvisi.append("⚠️ Tolte frasi ripetute: " + " / ".join(t[:80] for t in tolte))
+    promesse = promesse_rischiose(corpo.split("—\n")[0])      # il piè di pagina GDPR non conta
+    if promesse:
+        avvisi.append("⚠️ Controlla le promesse: " + ", ".join(promesse))
+    if avvisi:
+        note = " | ".join([note] + avvisi) if note else " | ".join(avvisi)
     return db.insert("bozze", {"tipo": tipo, "destinatario": destinatario or "", "oggetto": oggetto,
                                "corpo": corpo, "rif_tabella": rif_tabella, "rif_id": rif_id,
                                "in_risposta_a": in_risposta_a, "note": note}, ignore=False)
@@ -120,6 +143,8 @@ def proposta_pmi(az_id: int) -> dict:
            "Parti da UNA osservazione concreta sull'azienda (dall'analisi), proponi UN servizio di intelligenza artificiale "
            "(quello suggerito) descrivendo il caso d'uso dell'analisi in parole semplici, senza gergo tecnico, "
            "con un beneficio pratico, offri una demo di 20 minuti senza impegno. Niente clienti inventati, "
+           "niente promesse su prezzi, costi, gratuità, tempi o date, niente giorni proposti per la demo (sceglie il cliente), "
+           "non dire che non servono modifiche al sito. Italiano corretto: 'un chatbot', 'un assistente'. "
            "niente numeri inventati, niente superlativi. Niente firma. "
            "JSON: {\"oggetto\": \"max 8 parole, specifico per l'azienda\", \"corpo\": \"...\"}")
     user = (f"PROFILO:\n{_profilo(s)}\n\nAZIENDA:\n" +
