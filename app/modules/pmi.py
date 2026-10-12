@@ -18,22 +18,44 @@ OVERPASS = ["https://overpass-api.de/api/interpreter", "https://lz4.overpass-api
             "https://z.overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
             "https://overpass.kumi.systems/api/interpreter"]
 
-# settore -> (filtri OSM, servizio più adatto)
+# servizi di intelligenza artificiale che Gaspare implementa (l'analisi sceglie SOLO da qui)
+SERVIZI_AI = [
+    "Agente telefonico AI che risponde 24/7, prende prenotazioni e smista le chiamate",
+    "Assistente AI su WhatsApp per prenotazioni, domande frequenti e promemoria",
+    "Chatbot AI sul sito addestrato sui contenuti dell'azienda (orari, servizi, prezzi, FAQ)",
+    "Prenotazione online con conferme e promemoria automatici gestiti dall'AI",
+    "Qualificazione automatica dei lead con AI e inserimento nel CRM",
+    "Automazione AI di email, preventivi e documenti ripetitivi",
+    "Risposte AI alle recensioni e ai messaggi social",
+    "Integrazione AI con gestionale/CRM esistente (dati, report, flussi automatici)",
+]
+
+# settore -> (filtri OSM, servizio AI più probabile)
 SETTORI = {
-    "Farmacie": (['["amenity"="pharmacy"]'], "Agente telefonico AI + WhatsApp per prenotazioni e disponibilità"),
-    "Studi medici e dentistici": (['["amenity"="dentist"]', '["amenity"="doctors"]', '["healthcare"="clinic"]'],
-                                  "Prenotazioni e promemoria via WhatsApp"),
-    "Ristoranti": (['["amenity"="restaurant"]'], "Prenotazioni WhatsApp automatiche"),
-    "Hotel e B&B": (['["tourism"="hotel"]', '["tourism"="guest_house"]'], "Assistente omnichannel per richieste e prenotazioni"),
-    "Autofficine e concessionari": (['["shop"="car_repair"]', '["shop"="car"]'], "Promemoria tagliandi e preventivi via WhatsApp"),
-    "Palestre": (['["leisure"="fitness_centre"]'], "Iscrizioni, rinnovi e CRM soci"),
-    "Agenzie immobiliari": (['["office"="estate_agent"]'], "CRM lead e risposte automatiche agli annunci"),
-    "Studi professionali (commercialisti, avvocati)": (['["office"="accountant"]', '["office"="lawyer"]'],
-                                                       "Gestionale pratiche e assistente per i clienti"),
-    "Centri estetici e parrucchieri": (['["shop"="beauty"]', '["shop"="hairdresser"]'], "Prenotazioni WhatsApp e promemoria"),
-    "Negozi e e-commerce locali": (['["shop"="electronics"]', '["shop"="furniture"]', '["shop"="clothes"]'],
-                                   "Supporto clienti omnichannel e integrazione con il gestionale"),
+    "Farmacie": (['["amenity"="pharmacy"]'], SERVIZI_AI[0]),
+    "Studi medici e dentistici": (['["amenity"="dentist"]', '["amenity"="doctors"]', '["healthcare"="clinic"]'], SERVIZI_AI[1]),
+    "Ristoranti": (['["amenity"="restaurant"]'], SERVIZI_AI[0]),
+    "Hotel e B&B": (['["tourism"="hotel"]', '["tourism"="guest_house"]'], SERVIZI_AI[2]),
+    "Autofficine e concessionari": (['["shop"="car_repair"]', '["shop"="car"]'], SERVIZI_AI[1]),
+    "Palestre": (['["leisure"="fitness_centre"]'], SERVIZI_AI[1]),
+    "Agenzie immobiliari": (['["office"="estate_agent"]'], SERVIZI_AI[4]),
+    "Studi professionali (commercialisti, avvocati)": (['["office"="accountant"]', '["office"="lawyer"]'], SERVIZI_AI[5]),
+    "Centri estetici e parrucchieri": (['["shop"="beauty"]', '["shop"="hairdresser"]'], SERVIZI_AI[3]),
+    "Negozi e e-commerce locali": (['["shop"="electronics"]', '["shop"="furniture"]', '["shop"="clothes"]'], SERVIZI_AI[2]),
 }
+
+# cosa c'è già sul sito: (nome, regex sull'HTML)
+SEGNALI = [
+    ("WhatsApp", r"wa\.me|api\.whatsapp|whatsapp"),
+    ("chat sul sito", r"tawk\.to|crisp\.chat|intercom|livechat|zendesk|tidio|hubspot.*chat|messenger"),
+    ("chatbot AI già presente", r"chatbot|openai|botpress|voiceflow|landbot|dialogflow"),
+    ("prenotazione online", r"prenota online|prenotazione online|booking|calendly|thefork|quandoo|miodottore|doctolib|"
+                            r"treatwell|uala|fresha|mindbody|resos|plateform|prenota ora|prenota un tavolo"),
+    ("modulo contatti", r"<form[^>]*>(?:(?!</form>).)*(email|messaggio)"),
+    ("e-commerce", r"woocommerce|shopify|add to cart|aggiungi al carrello|prestashop"),
+    ("più lingue", r"hreflang=|/en/|lang=\"en"),
+    ("social", r"instagram\.com|facebook\.com"),
+]
 
 
 def cerca_osm(settore: str, citta: str, limite: int = 40) -> dict:
@@ -99,14 +121,14 @@ def analizza(az_id: int) -> dict:
         db.update("aziende", az_id, {"analisi": "Sito non raggiungibile", "stato": "Scartato"})
         return {"ok": False, "errore": "Sito non raggiungibile"}
     testo = re.sub(r"\s+", " ", soup.get_text(" "))[:4000]
-    segnali = []
     low = html.lower()
-    if "wa.me" in low or "whatsapp" in low:
-        segnali.append("usa già WhatsApp sul sito")
-    if not re.search(r"prenot|booking|calendly|appuntament", low):
-        segnali.append("nessuna prenotazione online visibile")
-    if re.search(r"chat|tawk|crisp|intercom|livechat|zendesk", low):
-        segnali.append("ha una chat sul sito")
+    presenti = [nome for nome, rx in SEGNALI if re.search(rx, low, re.S)]
+    assenti = [nome for nome, _ in SEGNALI[:5] if nome not in presenti]
+    segnali = ([f"ha: {', '.join(presenti)}"] if presenti else []) + ([f"manca: {', '.join(assenti)}"] if assenti else [])
+    if len(testo) < 300:                         # sito vuoto, bloccato o solo JavaScript: l'AI non avrebbe nulla da leggere
+        db.update("aziende", az_id, {"analisi": "Sito non leggibile (vuoto, bloccato o solo JavaScript): da verificare a mano. "
+                                                "[interesse 0/10]", "stato": "Scartato"})
+        return {"ok": False, "errore": "Sito non leggibile"}
     email = a["email"]
     if not email:
         cand = _email_pubbliche(html)
@@ -118,15 +140,25 @@ def analizza(az_id: int) -> dict:
         dominio = urlparse(a["sito"]).netloc.replace("www.", "")
         cand.sort(key=lambda e: (dominio not in e, not e.startswith(("info@", "commerciale@", "contatti@"))))
         email = cand[0] if cand else ""
-    sys = ("Analizza il sito di una PMI italiana per capire se trarrebbe beneficio da automazioni (WhatsApp, "
-           "agente telefonico AI, CRM, gestionale, integrazioni). Rispondi SOLO in JSON: "
-           "{\"analisi\": \"2-3 righe concrete basate SOLO su ciò che vedi\", \"servizio\": \"il servizio più adatto\", "
-           "\"interesse\": numero 1-10}")
+    servizi = "\n".join(f"{i + 1}. {x}" for i, x in enumerate(SERVIZI_AI))
+    sys = ("Sei un consulente che implementa l'intelligenza artificiale nelle PMI italiane. Dal sito capisci cosa manca "
+           "e quale servizio AI risolverebbe un problema reale dell'azienda. Scegli il servizio SOLO da questo elenco:\n"
+           f"{servizi}\n"
+           "Interesse (sii severo, usa tutta la scala): 8-10 = molte richieste dei clienti gestite a mano "
+           "(telefono, email, niente prenotazione online) e attività che vive di prenotazioni/contatti; "
+           "5-7 = qualcosa c'è già ma manca l'AI; 1-4 = è già automatizzato, oppure è una grande catena, un ente pubblico "
+           "o una ONG. Usa SOLO ciò che vedi: non inventare. Rispondi SOLO in JSON: "
+           "{\"cosa_manca\": \"1 riga\", \"servizio\": numero dall'elenco, "
+           "\"caso_uso\": \"1 frase concreta: cosa farebbe l'AI per QUESTA azienda\", \"interesse\": numero 1-10}")
     try:
-        d = llm.chat_json(sys, f"Azienda: {a['nome']} ({a['settore']}). Segnali: {', '.join(segnali)}\n" + llm.dati(testo, 1800),
-                          max_tokens=300)
-        analisi = f"{d.get('analisi', '')} [interesse {d.get('interesse', '?')}/10]"
-        servizio = d.get("servizio") or a["servizio"]
+        d = llm.chat_json(sys, f"Azienda: {a['nome']} ({a['settore']}, {a['citta']}). Segnali dal sito: {'; '.join(segnali)}\n"
+                          + llm.dati(testo, 1800), max_tokens=300)
+        try:
+            servizio = SERVIZI_AI[int(d.get("servizio")) - 1]
+        except (TypeError, ValueError, IndexError):
+            servizio = a["servizio"]
+        analisi = (f"Manca: {d.get('cosa_manca', '')} | Caso d'uso AI: {d.get('caso_uso', '')} | "
+                   f"Sul sito: {'; '.join(segnali)} [interesse {d.get('interesse', '?')}/10]")
     except llm.LLMError:
         analisi, servizio = "; ".join(segnali) or "Analisi AI non disponibile", a["servizio"]
     if safety.email_in_opt_out(email):

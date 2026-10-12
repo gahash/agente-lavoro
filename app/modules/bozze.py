@@ -117,7 +117,8 @@ def proposta_pmi(az_id: int) -> dict:
     sys = ("Scrivi una prima email a una PMI italiana, massimo 120 parole, in italiano, 3 brevi paragrafi separati "
            "da una riga vuota. Usa SEMPRE il registro formale: 'Lei', 'il Suo sito', 'Le propongo' — MAI 'tu', 'tuo', 'ti'. "
            "Inizia con 'Buongiorno,'. "
-           "Parti da UNA osservazione concreta sull'azienda (dall'analisi), proponi UN servizio pertinente "
+           "Parti da UNA osservazione concreta sull'azienda (dall'analisi), proponi UN servizio di intelligenza artificiale "
+           "(quello suggerito) descrivendo il caso d'uso dell'analisi in parole semplici, senza gergo tecnico, "
            "con un beneficio pratico, offri una demo di 20 minuti senza impegno. Niente clienti inventati, "
            "niente numeri inventati, niente superlativi. Niente firma. "
            "JSON: {\"oggetto\": \"max 8 parole, specifico per l'azienda\", \"corpo\": \"...\"}")
