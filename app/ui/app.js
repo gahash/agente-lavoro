@@ -383,7 +383,12 @@ V.linkedin = async m => {
     <div class="row" style="justify-content:space-between;margin:0">
       <span><span class="tag">${ST[p.stato] || esc(p.stato)}</span> <b>${esc(p.tema)}</b></span>
       <span class="small muted">📅 <input type="date" class="f-data" value="${esc(p.data_prevista || "")}" style="padding:2px 6px"> ${giorno(p.data_prevista)}</span></div>
-    <textarea class="f-testo" style="min-height:220px;margin-top:8px">${esc(p.testo)}</textarea>
+    <div style="display:flex;gap:14px;margin-top:8px;align-items:flex-start;flex-wrap:wrap">
+      <textarea class="f-testo" style="min-height:260px;flex:1 1 360px">${esc(p.testo)}</textarea>
+      <div style="flex:0 0 260px"><img class="li-img" data-id="${p.id}" alt="Grafica del post"
+        style="width:260px;height:260px;border-radius:8px;border:1px solid var(--line);background:var(--line);display:block">
+        <div class="row" style="margin:6px 0 0"><button class="sm sec" data-a="img">🖼️ Mostra l'immagine</button></div></div>
+    </div>
     <div class="row" style="margin:8px 0 0">
       <span class="small muted f-conta">${p.testo.length} / ${d.limite}</span>
       ${p.stato === "bozza" ? `<button class="ok" data-a="approva">✅ Approva</button>` : ""}
@@ -392,6 +397,10 @@ V.linkedin = async m => {
       <button class="sec" data-a="copia">📋 Copia</button>
       ${p.stato !== "pubblicato" ? `<button class="bad" data-a="scarta">Scarta</button>` : `<span class="small muted">pubblicato il ${dt(p.pubblicato_il)}</span>`}
     </div></div>`).join("") || `<p class="muted">Nessun post.</p>`}`;
+  // anteprime delle grafiche (richiesta con il token, poi mostrate come blob)
+  const carica = img => fetch(`/api/linkedin/post/${img.dataset.id}/grafica`, {headers: {"X-Token": window.TOKEN}})
+    .then(r => r.ok ? r.blob() : null).then(b => { if (b) img.src = URL.createObjectURL(b); }).catch(() => {});
+  m.querySelectorAll(".li-img").forEach(carica);
   m.oninput = e => { if (e.target.classList.contains("f-testo")) {
     const c = e.target.closest(".draft"), n = e.target.value.length; const el = $(".f-conta", c);
     el.textContent = `${n} / ${d.limite}`; el.style.color = n > d.limite ? "var(--bad)" : ""; } };
@@ -403,13 +412,14 @@ V.linkedin = async m => {
     const id = c.dataset.id, campi = {testo: $(".f-testo", c).value, data_prevista: $(".f-data", c).value};
     const a = t.dataset.a, salva = extra => api(`/api/linkedin/post/${id}`, {...campi, ...extra});
     if (a === "copia") { await navigator.clipboard.writeText(campi.testo); return toast("Post copiato"); }
-    if (a === "salva") return run(t, () => salva({}), "Salvato");
+    if (a === "salva") return run(t, () => salva({}), "Salvato, grafica aggiornata").then(() => carica($(".li-img", c)));
+    if (a === "img") return run(t, () => api(`/api/linkedin/post/${id}/grafica/mostra`, {}), "Immagine selezionata nel Finder: trascinala nel post");
     if (a === "approva") return run(t, () => salva({stato: "approvato"}), "Approvato").then(() => go("linkedin"));
     if (a === "scarta") return run(t, () => salva({stato: "scartato"})).then(() => go("linkedin"));
     if (a === "fatto") return run(t, () => salva({stato: "pubblicato"}), "Segnato come pubblicato").then(() => go("linkedin"));
     if (a === "pubblica") { await salva({}); await navigator.clipboard.writeText(campi.testo).catch(() => {});
       return run(t, () => api(`/api/linkedin/post/${id}/pubblica`, {}),
-        "LinkedIn aperto con il testo pronto (è anche negli appunti). Dopo averlo pubblicato premi \"Segna come pubblicato\""); }
+        "LinkedIn aperto con il testo pronto (anche negli appunti) e l'immagine selezionata nel Finder: trascinala nel post. Poi premi \"Segna come pubblicato\""); }
   };
 };
 

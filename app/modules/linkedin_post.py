@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 from ..core import db, llm
 from ..core.config import load_settings
+from . import linkedin_grafica
 
 LIMITE = 3000                     # caratteri massimi di un post LinkedIn
 SCHEMA = """CREATE TABLE IF NOT EXISTS post_linkedin (
@@ -219,7 +220,30 @@ def aggiorna(pid: int, campi: dict) -> dict:
         campi["pubblicato_il"] = db.now()
     campi["aggiornato"] = db.now()
     db.x(f"UPDATE post_linkedin SET {','.join(f'{k}=?' for k in campi)} WHERE id=?", [*campi.values(), pid])
+    if "testo" in campi or "tema" in campi:
+        grafica(pid, rigenera=True)
     return {"ok": True}
+
+
+def grafica(pid: int, rigenera: bool = False):
+    """Percorso dell'immagine del post (la crea se manca o se richiesto)."""
+    dest = linkedin_grafica.percorso(pid)
+    if rigenera or not dest.exists():
+        p = db.q("SELECT testo, tema FROM post_linkedin WHERE id=?", (pid,))[0]
+        linkedin_grafica.disegna(p["testo"], p["tema"] or "", dest)
+    return dest
+
+
+def mostra_grafica(pid: int) -> dict:
+    """Seleziona l'immagine nel Finder, pronta da trascinare nel post di LinkedIn."""
+    import subprocess
+    import sys
+    dest = grafica(pid)
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", "-R", str(dest)])
+    elif sys.platform == "win32":
+        subprocess.Popen(["explorer", "/select,", str(dest)])
+    return {"ok": True, "file": str(dest)}
 
 
 def link_pubblica(pid: int) -> str:
@@ -244,6 +268,7 @@ def genera(tema: str) -> dict:
         return {"ok": False, "errore": "Il modello non ha prodotto testo"}
     pid = db.x("INSERT INTO post_linkedin (tema, testo, data_prevista, origine, creato) VALUES (?,?,?,?,?)",
                (tema[:120], testo[:LIMITE], _prima_data_libera(), "AI locale", db.now()))
+    grafica(pid, rigenera=True)
     db.log("linkedin", f"Nuovo post generato: {tema[:80]}")
     return {"ok": True, "id": pid}
 

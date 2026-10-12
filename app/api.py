@@ -264,10 +264,22 @@ def li_post_aggiorna(pid: int, data: dict = Body(...)):
     return linkedin_post.aggiorna(pid, data)
 
 
+@app.get("/api/linkedin/post/{pid}/grafica", dependencies=A)
+def li_grafica(pid: int):
+    return FileResponse(ok(linkedin_post.grafica, pid), media_type="image/png", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/linkedin/post/{pid}/grafica/mostra", dependencies=A)
+def li_grafica_mostra(pid: int):
+    return ok(linkedin_post.mostra_grafica, pid)
+
+
 @app.post("/api/linkedin/post/{pid}/pubblica", dependencies=A)
 def li_post_pubblica(pid: int):
     url = linkedin_post.link_pubblica(pid)
-    return ponte.apri(url) if ponte.personale() else ok(browser.apri, url)
+    r = ponte.apri(url) if ponte.personale() else ok(browser.apri, url)
+    ok(linkedin_post.mostra_grafica, pid)          # l'immagine pronta nel Finder, da trascinare nel post
+    return r
 
 
 @app.post("/api/linkedin/genera", dependencies=A)
