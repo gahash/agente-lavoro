@@ -83,6 +83,38 @@ def promesse_rischiose(corpo: str) -> list[str]:
     return sorted({m.group(0).lower() for m in PROMESSE_RX.finditer(corpo or "")})
 
 
+TU_RX = re.compile(r"\b(tu|tuo|tua|tuoi|tue|ti|te|puoi|vuoi|hai)\b", re.I)
+AUTO_TIPI = ("proposta_pmi", "follow_up")
+
+
+def motivi_blocco(tipo: str, destinatario: str, oggetto: str, corpo: str) -> list[str]:
+    """Controlli che una bozza deve superare per essere approvata senza Gaspare."""
+    s = load_settings()
+    testo = (corpo or "").split("—\n")[0]                 # senza il piè di pagina GDPR
+    m = []
+    if tipo not in AUTO_TIPI:
+        m.append("tipo da approvare a mano")
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[a-z]{2,}", (destinatario or "").strip(), re.I):
+        m.append("destinatario mancante o non valido")
+    if promesse_rischiose(testo):
+        m.append("promesse da controllare")
+    if TU_RX.search(testo):
+        m.append("dà del tu")
+    if tipo == "proposta_pmi" and not 300 <= len(testo) <= 1600:
+        m.append("lunghezza anomala")
+    if not testo.lstrip().startswith(("Buongiorno", "Buonasera", "Gentile")):
+        m.append("saluto iniziale mancante")
+    if not oggetto or len(oggetto) > 90:
+        m.append("oggetto mancante o troppo lungo")
+    if db.q("SELECT 1 FROM aziende WHERE lower(email)=lower(?) AND opt_out=1", ((destinatario or "").strip(),)):
+        m.append("il destinatario ha chiesto di non essere contattato")
+    oggi = db.now()[:10]
+    n = db.q("SELECT COUNT(*) n FROM bozze WHERE note LIKE '%approvata in automatico%' AND creato LIKE ?", (oggi + "%",))[0]["n"]
+    if n >= int(s.get("auto_max_giorno", 8)):
+        m.append("tetto giornaliero di approvazioni automatiche raggiunto")
+    return m
+
+
 def _salva(tipo, destinatario, oggetto, corpo, rif_tabella, rif_id, in_risposta_a="", note="") -> int:
     corpo, tolte = togli_ripetizioni(rifinisci(corpo))
     avvisi = []
@@ -91,11 +123,19 @@ def _salva(tipo, destinatario, oggetto, corpo, rif_tabella, rif_id, in_risposta_
     promesse = promesse_rischiose(corpo.split("—\n")[0])      # il piè di pagina GDPR non conta
     if promesse:
         avvisi.append("⚠️ Controlla le promesse: " + ", ".join(promesse))
+    stato = "da_approvare"
+    if load_settings().get("approvazione_automatica") and tipo in AUTO_TIPI:
+        blocchi = (["frasi ripetute"] if tolte else []) + motivi_blocco(tipo, destinatario, oggetto, corpo)
+        if blocchi:
+            avvisi.append("Da rivedere: " + ", ".join(blocchi))
+        else:
+            stato = "approvata"
+            avvisi.append("✅ approvata in automatico (tutti i controlli superati)")
     if avvisi:
         note = " | ".join([note] + avvisi) if note else " | ".join(avvisi)
     return db.insert("bozze", {"tipo": tipo, "destinatario": destinatario or "", "oggetto": oggetto,
                                "corpo": corpo, "rif_tabella": rif_tabella, "rif_id": rif_id,
-                               "in_risposta_a": in_risposta_a, "note": note}, ignore=False)
+                               "in_risposta_a": in_risposta_a, "note": note, "stato": stato}, ignore=False)
 
 
 def candidatura(opp_id: int) -> dict:
@@ -176,6 +216,20 @@ def risposta_email(posta_id: int) -> dict:
     ogg = d.get("oggetto") or ("Re: " + (m["oggetto"] or ""))
     bid = _salva("risposta", m["mittente"], ogg, corpo, "posta", posta_id, in_risposta_a=m["message_id"] or "")
     return {"ok": True, "id": bid}
+
+
+def follow_up_dovuti() -> dict:
+    """Routine: prepara i solleciti per i contatti senza risposta arrivati alla data prevista (uno alla volta)."""
+    s = load_settings()
+    fatti = 0
+    for p in db.q("SELECT id FROM pipeline WHERE stato='Contattato' AND data_prossimo<=? AND solleciti<?",
+                  (db.now()[:10], s["max_solleciti"])):
+        if db.q("SELECT 1 FROM bozze WHERE tipo='follow_up' AND rif_id=? AND stato IN ('da_approvare','approvata')", (p["id"],)):
+            continue
+        fatti += bool(follow_up(p["id"]).get("ok"))
+    if fatti:
+        db.log("bozze", f"{fatti} solleciti preparati in automatico")
+    return {"ok": True, "solleciti": fatti}
 
 
 def follow_up(pipe_id: int) -> dict:

@@ -33,6 +33,10 @@ for d in (DATA, REPORTS, EXPORTS, LOGS, BROWSER_PROFILE):
 DEFAULTS: dict = {
     # sicurezza
     "max_pmi_giorno": 15,
+    # via di mezzo (scelta di Gaspare): proposte PMI e solleciti che superano TUTTI i controlli si approvano da soli,
+    # entro un tetto giornaliero; le altre restano in Da approvare con il motivo
+    "approvazione_automatica": True,
+    "auto_max_giorno": 8,
     "soglia_annunci": 7,
     "follow_up_giorni": 5,
     "max_solleciti": 2,
@@ -109,7 +113,7 @@ DEFAULTS: dict = {
     "caccia_settori": ["Farmacie", "Studi medici e dentistici", "Ristoranti", "Hotel e B&B", "Autofficine e concessionari",
                        "Palestre", "Agenzie immobiliari", "Studi professionali (commercialisti, avvocati)",
                        "Centri estetici e parrucchieri"],
-    "caccia_solo_analisi": True,                # trova e analizza le aziende, senza scrivere proposte né candidature
+    "caccia_solo_analisi": False,                # trova e analizza le aziende, senza scrivere proposte né candidature
     "caccia_analisi": 4,                        # siti analizzati per giro: sul Mac Intel ogni analisi richiede minuti
     "caccia_proposte_giorno": 10,               # proposte PMI scritte al giorno (sempre entro max_pmi_giorno)
     "caccia_candidature_giorno": 3,

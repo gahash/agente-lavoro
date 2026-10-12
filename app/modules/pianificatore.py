@@ -7,7 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from ..core import db
 from ..core.config import load_settings
-from . import agenda, attivita, caccia, lavoro, posta, report
+from . import agenda, attivita, bozze, caccia, lavoro, posta, report
 
 sched = BackgroundScheduler(timezone="Europe/Rome")
 
@@ -78,6 +78,8 @@ def avvia() -> None:
     sched.add_job(_safe("report", report.report, "sera"), "cron", hour=h, minute=m, id="rep_s")
     sched.add_job(_safe("report", report.report, "settimanale"), "cron", day_of_week="fri", hour=17, id="rep_w")
     sched.add_job(_safe("attivita", attivita.genera), "cron", hour=7, minute=0, id="attivita")
+    sched.add_job(_safe("follow-up", bozze.follow_up_dovuti), "cron", day_of_week="mon-fri", hour=8, minute=40,
+                  id="followup")
     for i, ora in enumerate(s["invio_approvate"]):
         h, m = _hm(ora)
         sched.add_job(_safe("invio", posta.invia_approvate), "cron", day_of_week="mon-fri", hour=h, minute=m,

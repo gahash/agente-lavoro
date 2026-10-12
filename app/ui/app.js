@@ -74,7 +74,7 @@ V.home = async m => {
   <div id="rep" class="card md small" style="display:none"></div>
   <h2>Pianificazione automatica (con l'app aperta)</h2>
   <div class="small muted">${STATO.pianificazione.map(j => `${esc(j.id)}: ${esc(j.prossima)}`).join(" · ")}</div>
-  <p class="small muted">Le routine preparano solo dati, analisi e bozze. Nessun messaggio parte senza la tua approvazione.</p>`;
+  <p class="small muted">${STATO.impostazioni.approvazione_automatica ? `Proposte e solleciti che superano tutti i controlli si approvano da soli (max ${STATO.impostazioni.auto_max_giorno} al giorno); il resto aspetta il tuo OK in Da approvare.` : "Le routine preparano solo dati, analisi e bozze. Nessun messaggio parte senza la tua approvazione."}</p>`;
   const disegnaTodo = async () => { const l = await aggiornaBadgeTodo(); $("#home-todo").innerHTML = todoHtml(l.filter(a => !a.fatto).slice(0, 8), true); };
   await disegnaTodo(); todoEvents(m, disegnaTodo);
   $("#q-posta").onclick = e => run(e.target, () => api("/api/posta/controlla", {}), r => `Posta: ${r.nuovi} nuovi messaggi`);
@@ -224,7 +224,7 @@ V.pmi = async m => {
 V.bozze = async m => {
   const tab = V.bozze.tab || "da_approvare";
   const lista = await api("/api/bozze?stato=" + tab);
-  m.innerHTML = `<h1>Da approvare</h1><p class="sub">Niente parte senza il tuo OK. Modifica il testo e approva: le approvate con un'email partono da sole alle ${esc((STATO.impostazioni.invio_approvate || []).join(", "))} (lun-ven), oppure con "Invia ora".</p>
+  m.innerHTML = `<h1>Da approvare</h1><p class="sub">${STATO.impostazioni.approvazione_automatica ? "Qui trovi ciò che l'app non ha potuto approvare da sola (il motivo è nelle note). " : "Niente parte senza il tuo OK. "}Modifica il testo e approva: le approvate con un'email partono da sole alle ${esc((STATO.impostazioni.invio_approvate || []).join(", "))} (lun-ven), oppure con "Invia ora".</p>
   <div class="row">${[["da_approvare","Da approvare"],["approvata","Approvate"],["inviata","Inviate"],["scartata","Scartate"]].map(([k,l]) =>
     `<button class="${k===tab?"":"sec"} sm" data-tab="${k}">${l}</button>`).join("")}</div>
   ${lista.map(b => `<div class="card draft" style="margin-bottom:12px" data-id="${b.id}">
