@@ -35,6 +35,10 @@ class FiltroTests(unittest.TestCase):
         self.assertTrue(self.ok(ruolo="Dev", tipo="Contract", remoto=""))
         self.assertTrue(self.ok(ruolo="Dev", descrizione="Collaborazione con partita IVA", remoto="No (Torino)"))
 
+    def test_collaborazione_da_remoto_riservata_ad_altri_paesi(self):
+        self.assertFalse(self.ok(ruolo="Python Team Lead", tipo="Contractor", remoto="Sì (Bulgaria)"))
+        self.assertFalse(self.ok(ruolo="AI Trainer", tipo="contract", remoto="Sì (USA, UK, India)"))
+
 
 if __name__ == "__main__":
     unittest.main()

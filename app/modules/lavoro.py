@@ -147,14 +147,14 @@ def ammesso(o: dict) -> tuple[bool, str]:
     if not load_settings().get("solo_remoto_o_collaborazione", True):
         return True, ""
     testo = " ".join(str(o.get(k) or "") for k in ("ruolo", "tipo", "requisiti", "descrizione"))
+    rem = str(o.get("remoto") or "").strip().lower()
+    loc = rem[rem.find("(") + 1:rem.rfind(")")] if "(" in rem else ""
+    if rem.startswith(("sì", "si")) and loc and not OK_LOC.search(loc):   # remoto riservato ad altri paesi
+        return False, f"remoto solo per: {loc[:60]}"
     if COLLAB_RX.search(testo):
         return True, "collaborazione"
-    rem = str(o.get("remoto") or "").strip().lower()
     if not rem.startswith(("sì", "si", "yes", "remote", "100%")):
         return False, f"non da remoto ({o.get('remoto') or 'non indicato'})"
-    loc = rem[rem.find("(") + 1:rem.rfind(")")] if "(" in rem else ""
-    if loc and not OK_LOC.search(loc):
-        return False, f"remoto solo per: {loc[:60]}"
     if USA_ONLY.search(testo):
         return False, "remoto solo per residenti USA"
     if re.search(r"ibrid|hybrid", rem):
