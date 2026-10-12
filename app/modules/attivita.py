@@ -29,6 +29,10 @@ def genera(giorno: str | None = None) -> int:
     for m in db.q("SELECT id, mittente, oggetto, allarme FROM posta WHERE gestita=0 AND categoria='stop'"):
         add(f"stop|{m['id']}", f"⚠️ Email sospetta: {m['oggetto'][:70]}", f"{m['mittente']} — {m['allarme']}. Non rispondere con dati o pagamenti.",
             vista="posta", priorita=1)
+    from . import linkedin_post
+    for p in linkedin_post.di_oggi():
+        add(f"linkedin|{p['id']}", f"Pubblica il post LinkedIn: {p['tema']}", "Post LinkedIn → 🚀 Pubblica",
+            ora=s.get("linkedin_ora", ""), vista="linkedin", priorita=1)
     nb = db.q("SELECT COUNT(*) n FROM bozze WHERE stato='da_approvare'")[0]["n"]
     if nb:
         add("bozze", f"{nb} bozze da approvare", vista="bozze", priorita=1)

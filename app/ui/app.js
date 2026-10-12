@@ -366,6 +366,53 @@ V.agenda = async m => {
   $("#gest").onclick = e => { e.preventDefault(); api("/api/browser/apri", {url: s.crm_url_lead + "index.php?tab=appuntamenti"}).catch(err => toast(err.message, true)); };
 };
 
+V.linkedin = async m => {
+  const d = await api("/api/linkedin/post");
+  const ST = {bozza: "📝 Bozza", approvato: "✅ Approvato", pubblicato: "🚀 Pubblicato"};
+  const oggi = new Date().toISOString().slice(0, 10);
+  const giorno = s => s ? new Date(s + "T12:00").toLocaleDateString("it-IT", {weekday: "short", day: "2-digit", month: "2-digit"}) : "—";
+  m.innerHTML = `<h1>Post LinkedIn</h1>
+  <p class="sub">Calendario editoriale: ${d.post.filter(p => p.stato !== "pubblicato").length} post in programma, martedì e giovedì.
+   Rileggi e approva; il giorno previsto premi <b>🚀 Pubblica</b>: LinkedIn si apre con il testo già pronto, tu premi "Pubblica".</p>
+  <div class="card" style="margin-bottom:14px"><b>✨ Nuovo post con l'AI locale</b>
+    <div class="row" style="margin:8px 0 0"><input id="li-tema" list="li-temi" placeholder="Tema del post (es. un progetto, una lezione imparata…)" style="flex:1">
+    <datalist id="li-temi">${d.temi.map(t => `<option value="${esc(t)}">`).join("")}</datalist>
+    <button id="li-gen">Scrivi la bozza</button></div>
+    <p class="small muted" style="margin:6px 0 0">Ci vogliono alcuni minuti: la bozza compare qui sotto quando è pronta.</p></div>
+  ${d.post.map(p => `<div class="card draft" style="margin-bottom:12px;${p.data_prevista === oggi && p.stato === "approvato" ? "border-color:var(--acc)" : ""}" data-id="${p.id}">
+    <div class="row" style="justify-content:space-between;margin:0">
+      <span><span class="tag">${ST[p.stato] || esc(p.stato)}</span> <b>${esc(p.tema)}</b></span>
+      <span class="small muted">📅 <input type="date" class="f-data" value="${esc(p.data_prevista || "")}" style="padding:2px 6px"> ${giorno(p.data_prevista)}</span></div>
+    <textarea class="f-testo" style="min-height:220px;margin-top:8px">${esc(p.testo)}</textarea>
+    <div class="row" style="margin:8px 0 0">
+      <span class="small muted f-conta">${p.testo.length} / ${d.limite}</span>
+      ${p.stato === "bozza" ? `<button class="ok" data-a="approva">✅ Approva</button>` : ""}
+      ${p.stato !== "pubblicato" ? `<button class="sec" data-a="salva">💾 Salva</button>` : ""}
+      ${p.stato === "approvato" ? `<button data-a="pubblica">🚀 Pubblica su LinkedIn</button><button class="sec" data-a="fatto">Segna come pubblicato</button>` : ""}
+      <button class="sec" data-a="copia">📋 Copia</button>
+      ${p.stato !== "pubblicato" ? `<button class="bad" data-a="scarta">Scarta</button>` : `<span class="small muted">pubblicato il ${dt(p.pubblicato_il)}</span>`}
+    </div></div>`).join("") || `<p class="muted">Nessun post.</p>`}`;
+  m.oninput = e => { if (e.target.classList.contains("f-testo")) {
+    const c = e.target.closest(".draft"), n = e.target.value.length; const el = $(".f-conta", c);
+    el.textContent = `${n} / ${d.limite}`; el.style.color = n > d.limite ? "var(--bad)" : ""; } };
+  m.onclick = async e => {
+    const t = e.target;
+    if (t.id === "li-gen") { const tema = $("#li-tema").value.trim(); if (!tema) return toast("Scrivi o scegli un tema", true);
+      return run(t, () => api("/api/linkedin/genera", {tema}), "L'AI sta scrivendo: ricarica questa pagina tra qualche minuto"); }
+    const c = t.closest(".draft"); if (!c || !t.dataset.a) return;
+    const id = c.dataset.id, campi = {testo: $(".f-testo", c).value, data_prevista: $(".f-data", c).value};
+    const a = t.dataset.a, salva = extra => api(`/api/linkedin/post/${id}`, {...campi, ...extra});
+    if (a === "copia") { await navigator.clipboard.writeText(campi.testo); return toast("Post copiato"); }
+    if (a === "salva") return run(t, () => salva({}), "Salvato");
+    if (a === "approva") return run(t, () => salva({stato: "approvato"}), "Approvato").then(() => go("linkedin"));
+    if (a === "scarta") return run(t, () => salva({stato: "scartato"})).then(() => go("linkedin"));
+    if (a === "fatto") return run(t, () => salva({stato: "pubblicato"}), "Segnato come pubblicato").then(() => go("linkedin"));
+    if (a === "pubblica") { await salva({}); await navigator.clipboard.writeText(campi.testo).catch(() => {});
+      return run(t, () => api(`/api/linkedin/post/${id}/pubblica`, {}),
+        "LinkedIn aperto con il testo pronto (è anche negli appunti). Dopo averlo pubblicato premi \"Segna come pubblicato\""); }
+  };
+};
+
 V.profili = async m => {
   const d = await api("/api/profili");
   const P = d.profili, NOMI = {linkedin: "LinkedIn", indeed: "Indeed"};

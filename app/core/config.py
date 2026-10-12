@@ -114,6 +114,8 @@ DEFAULTS: dict = {
     "caccia_proposte_giorno": 10,               # proposte PMI scritte al giorno (sempre entro max_pmi_giorno)
     "caccia_candidature_giorno": 3,
     "caccia_interesse_min": 6,                  # su 10, dall'analisi del sito
+    "linkedin_giorni": [1, 3],                  # post LinkedIn: martedì e giovedì (0 = lunedì)
+    "linkedin_ora": "08:30",
     "invio_approvate": ["08:55", "11:15", "13:55", "16:20", "18:40"],  # partono solo le bozze già approvate
 }
 

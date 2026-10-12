@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .core import db, llm, vault
 from .core.config import APP_NAME, DATA, UI_DIR, VERSION, load_settings, save_settings
-from .modules import (agenda, assistente, attivita, caccia, bozze, browser, github_massivo, lavoro, pianificatore, pmi, ponte, profili,
+from .modules import (agenda, assistente, attivita, caccia, bozze, browser, github_massivo, lavoro, pianificatore, pmi, ponte, profili, linkedin_post,
                       portali, posta, progetti, report, sistema)
 
 # token di sessione: solo la finestra dell'app lo conosce (protegge da altri siti aperti nel browser)
@@ -252,6 +252,32 @@ def agenda_lista():
 @app.post("/api/agenda/promemoria", dependencies=A)
 def agenda_promemoria():
     return ok(lambda: {"ok": True, "inviati": agenda.promemoria()})
+
+
+@app.get("/api/linkedin/post", dependencies=A)
+def li_post():
+    return {"post": linkedin_post.lista(), "temi": linkedin_post.TEMI, "limite": linkedin_post.LIMITE}
+
+
+@app.post("/api/linkedin/post/{pid}", dependencies=A)
+def li_post_aggiorna(pid: int, data: dict = Body(...)):
+    return linkedin_post.aggiorna(pid, data)
+
+
+@app.post("/api/linkedin/post/{pid}/pubblica", dependencies=A)
+def li_post_pubblica(pid: int):
+    url = linkedin_post.link_pubblica(pid)
+    return ponte.apri(url) if ponte.personale() else ok(browser.apri, url)
+
+
+@app.post("/api/linkedin/genera", dependencies=A)
+def li_genera(data: dict = Body(...)):
+    import threading
+    tema = str(data.get("tema") or "").strip()[:200]
+    if not tema:
+        raise HTTPException(400, "Indica il tema del post")
+    threading.Thread(target=lambda: ok(linkedin_post.genera, tema), daemon=True).start()
+    return {"ok": True}
 
 
 @app.get("/api/profili", dependencies=A)
