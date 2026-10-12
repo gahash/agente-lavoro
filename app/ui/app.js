@@ -366,6 +366,41 @@ V.agenda = async m => {
   $("#gest").onclick = e => { e.preventDefault(); api("/api/browser/apri", {url: s.crm_url_lead + "index.php?tab=appuntamenti"}).catch(err => toast(err.message, true)); };
 };
 
+V.profili = async m => {
+  const d = await api("/api/profili");
+  const P = d.profili, NOMI = {linkedin: "LinkedIn", indeed: "Indeed"};
+  const conta = t => `${(t || "").length} caratteri`;
+  m.innerHTML = `<h1>Profili LinkedIn · Indeed</h1>
+  <p class="sub">Testi coerenti con il CV. Per ogni voce: <b>Copia</b>, poi <b>Apri</b> (si apre la pagina giusta nel tuo Chrome), incolla e salva sul sito.
+  L'app non compila i profili da sola: LinkedIn e Indeed vietano l'automazione e l'account rischierebbe limitazioni.</p>
+  <p class="small muted">CV pronti: ${d.cv.map(esc).join(" · ") || "nessuno"} — cartella <code>${esc(d.cartella_cv)}</code></p>
+  ${Object.keys(P).map(sito => `<h2>${NOMI[sito] || esc(sito)}</h2>` + P[sito].map((v, i) => `
+    <div class="card" style="margin-bottom:10px" data-sito="${sito}" data-i="${i}">
+      <div class="row" style="justify-content:space-between;margin:0"><b>${i + 1}. ${esc(v.campo)}</b>
+        <span class="small muted">${v.limite ? conta(v.testo) + " / max " + v.limite : ""}</span></div>
+      ${v.nota ? `<p class="small muted" style="margin:4px 0">${esc(v.nota)}</p>` : ""}
+      ${v.testo ? `<textarea class="f-testo" style="min-height:${v.testo.length > 300 ? 180 : 60}px">${esc(v.testo)}</textarea>` : ""}
+      <div class="row" style="margin:8px 0 0">
+        ${v.testo ? `<button data-a="copia">📋 Copia</button>` : ""}
+        ${v.cv ? `<button data-a="cv">📄 Mostra il CV</button>` : ""}
+        <button class="sec" data-a="apri">↗ Apri su ${NOMI[sito] || esc(sito)}</button>
+        <label class="small" style="margin-left:auto"><input type="checkbox" data-a="fatto" ${v.fatto ? "checked" : ""}> fatto</label>
+      </div></div>`).join("")).join("")}
+  <div class="row"><button class="sec" id="salva-p">💾 Salva le modifiche ai testi</button></div>`;
+  const raccogli = () => { m.querySelectorAll("[data-sito]").forEach(c => { const v = P[c.dataset.sito][c.dataset.i];
+    const ta = $(".f-testo", c); if (ta) v.testo = ta.value; v.fatto = $("[data-a=fatto]", c).checked; }); return P; };
+  m.onclick = async e => {
+    const t = e.target, c = t.closest("[data-sito]");
+    if (t.id === "salva-p") return run(t, () => api("/api/profili", raccogli()), "Testi salvati");
+    if (!c || !t.dataset.a) return;
+    const v = P[c.dataset.sito][c.dataset.i];
+    if (t.dataset.a === "copia") { await navigator.clipboard.writeText($(".f-testo", c).value); return toast(`Copiato: ${v.campo}`); }
+    if (t.dataset.a === "apri") return run(t, () => api("/api/browser/apri", {url: v.apri}), "Aperto nel tuo Chrome");
+    if (t.dataset.a === "cv") return run(t, () => api("/api/profili/cv", {}), "CV mostrato nel Finder: trascinalo su Indeed");
+  };
+  m.onchange = e => { if (e.target.dataset.a === "fatto") api("/api/profili", raccogli()).catch(() => {}); };
+};
+
 V.crm = async m => {
   const lead = await api("/api/crm/lead");
   const sg = await api("/api/ponte/segnalibro").catch(() => ({personale: false}));

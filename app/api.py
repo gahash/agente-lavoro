@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .core import db, llm, vault
 from .core.config import APP_NAME, DATA, UI_DIR, VERSION, load_settings, save_settings
-from .modules import (agenda, assistente, attivita, caccia, bozze, browser, github_massivo, lavoro, pianificatore, pmi, ponte,
+from .modules import (agenda, assistente, attivita, caccia, bozze, browser, github_massivo, lavoro, pianificatore, pmi, ponte, profili,
                       portali, posta, progetti, report, sistema)
 
 # token di sessione: solo la finestra dell'app lo conosce (protegge da altri siti aperti nel browser)
@@ -252,6 +252,21 @@ def agenda_lista():
 @app.post("/api/agenda/promemoria", dependencies=A)
 def agenda_promemoria():
     return ok(lambda: {"ok": True, "inviati": agenda.promemoria()})
+
+
+@app.get("/api/profili", dependencies=A)
+def profili_lista():
+    return {"profili": profili.leggi(), "cv": profili.cv(), "cartella_cv": str(profili.CV_DIR)}
+
+
+@app.post("/api/profili", dependencies=A)
+def profili_salva(data: dict = Body(...)):
+    return profili.salva(data)
+
+
+@app.post("/api/profili/cv", dependencies=A)
+def profili_cv():
+    return ok(profili.mostra_cv)
 
 
 @app.post("/api/caccia", dependencies=A)
