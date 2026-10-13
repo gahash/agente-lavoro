@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .core import db, llm, vault
 from .core.config import APP_NAME, DATA, UI_DIR, VERSION, load_settings, save_settings
-from .modules import (agenda, assistente, attivita, caccia, bozze, browser, github_massivo, lavoro, pianificatore, pmi, ponte, profili, linkedin_post, linkedin_api,
+from .modules import (agenda, assistente, attivita, caccia, bozze, browser, github_massivo, lavoro, pianificatore, pmi, ponte, profili, linkedin_post, linkedin_api, video_brevi,
                       portali, posta, progetti, report, sistema)
 
 # token di sessione: solo la finestra dell'app lo conosce (protegge da altri siti aperti nel browser)
@@ -288,6 +288,49 @@ def li_post_pubblica(pid: int):
     url = linkedin_post.link_pubblica()
     r = ponte.apri(url) if ponte.personale() else ok(browser.apri, url)
     return {**r, "modo": "assistito", "appunti": appunti}
+
+
+@app.get("/api/video", dependencies=A)
+def video_lista():
+    return {"video": video_brevi.lista(), "voci": video_brevi.voci(), "collegato": linkedin_api.stato()["collegato"]}
+
+
+@app.post("/api/video/genera", dependencies=A)
+def video_genera(data: dict = Body(...)):
+    tema = (data.get("tema") or "").strip()
+    if not tema:
+        raise HTTPException(400, "Scrivi un tema")
+    import threading
+    threading.Thread(target=lambda: ok(video_brevi.genera, tema), daemon=True).start()
+    return {"ok": True}
+
+
+@app.post("/api/video/{vid}", dependencies=A)
+def video_aggiorna(vid: int, data: dict = Body(...)):
+    return video_brevi.aggiorna(vid, data)
+
+
+@app.get("/api/video/{vid}/file", dependencies=A)
+def video_file(vid: int):
+    return FileResponse(ok(video_brevi.monta, vid), media_type="video/mp4", headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/video/{vid}/rifai", dependencies=A)
+def video_rifai(vid: int):
+    ok(video_brevi.monta, vid, True)
+    return {"ok": True}
+
+
+@app.post("/api/video/{vid}/mostra", dependencies=A)
+def video_mostra(vid: int):
+    return ok(video_brevi.mostra, vid)
+
+
+@app.post("/api/video/{vid}/pubblica", dependencies=A)
+def video_pubblica(vid: int):
+    if not linkedin_api.stato()["collegato"]:
+        raise HTTPException(400, "Collega LinkedIn nelle Impostazioni per pubblicare i video")
+    return ok(linkedin_api.pubblica_video, vid)
 
 
 @app.get("/api/linkedin/collegamento", dependencies=A)

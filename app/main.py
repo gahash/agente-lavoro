@@ -79,8 +79,9 @@ def main():
         sys.stdout = sys.stderr = f
     chiudi_istanze_precedenti()
     db.init()
-    from app.modules import linkedin_post
+    from app.modules import linkedin_post, video_brevi
     linkedin_post.crea_serie_iniziale()        # primi post del calendario LinkedIn (solo la prima volta)
+    video_brevi.crea_serie_iniziale()          # prime pillole video (solo la prima volta)
     pianificatore.avvia()
     pianificatore.recupero_avvio()
     from app.core import llm

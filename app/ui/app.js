@@ -52,7 +52,7 @@ const JOB = {posta: "📬 Controllo posta", invio: "✉️ Invio email approvate
   portali: "🌐 Portali lavoro", rep_m: "📝 Report del mattino", rep_s: "📝 Report della sera", rep_w: "📝 Report settimanale",
   attivita: "✅ Cose da fare", linkedin: "📣 Pubblicazione post LinkedIn", followup: "🔁 Solleciti", agenda: "📅 Agenda del giorno"};
 const MOD = {posta: "✉️", caccia: "🔎", pmi: "🏢", lavoro: "💼", portali: "🌐", agenda: "📅", linkedin: "📣", report: "📝",
-  crm: "🗂️", browser: "🌐", github: "📦", progetti: "📦", ai: "🤖", api: "⚙️"};
+  crm: "🗂️", video: "🎬", browser: "🌐", github: "📦", progetti: "📦", ai: "🤖", api: "⚙️"};
 const TIPO = {proposta_pmi: "proposte a PMI", candidatura: "candidature", follow_up: "solleciti"};
 const esitoPubblica = r => r.modo === "api" ? "✅ Pubblicato su LinkedIn con l'immagine"
   : `LinkedIn aperto: ${r.appunti ? "clicca nel riquadro e premi ⌘V per il testo" : "incolla il testo"}, poi trascina nel post l'immagine selezionata nel Finder e premi "Pubblica"`;
@@ -119,7 +119,7 @@ V.home = async m => {
     ${box(c.ricevute, "email ricevute", "", "posta")}
     ${box(c.risposte, "risposte dai contattati", c.risposte ? "ok" : "", "posta")}
     ${box(c.rimbalzi, "email non consegnate", c.rimbalzi ? "bad" : "", "posta", c.rimbalzi ? "indirizzo errato o casella piena" : "")}
-    ${box(c.post_pubblicati, "post LinkedIn pubblicati", "", "linkedin", c.prossimo_post ? `prossimo: ${giornoIt(c.prossimo_post.data_prevista)}` : "")}
+    ${box(c.post_pubblicati, "post e video LinkedIn pubblicati", "", "linkedin", c.prossimo_post ? `prossimo: ${giornoIt(c.prossimo_post.data_prevista)}` : "")}
     ${box(c.aziende_trovate, "aziende trovate", "", "pmi")}
     ${box(c.annunci_trovati, "annunci trovati", "", "lavoro")}
   </div>
@@ -506,6 +506,68 @@ V.linkedin = async m => {
     if (a === "fatto") return run(t, () => salva({stato: "pubblicato"}), "Segnato come pubblicato").then(() => go("linkedin"));
     if (a === "pubblica") { await salva({});
       return pubblicaPost(t, id, "linkedin"); }
+  };
+};
+
+V.video = async m => {
+  const d = await api("/api/video");
+  const ST = {bozza: "📝 Bozza", approvato: "✅ Approvato", pubblicato: "🚀 Pubblicato"};
+  const giorno = s => s ? new Date(s + "T12:00").toLocaleDateString("it-IT", {weekday: "short", day: "2-digit", month: "2-digit"}) : "—";
+  const s = STATO.impostazioni;
+  m.innerHTML = `<h1>Video brevi</h1>
+  <p class="sub">Pillole di 15–30 secondi: una frase per riga = una scena, letta dalla voce del Mac e scritta grande a schermo
+   (su LinkedIn i video partono senza audio). ${d.collegato ? `Gli approvati escono da soli il giorno previsto alle ${esc(s.linkedin_ora)}.`
+   : `Per pubblicarli da soli <a href="#" onclick="go('impostazioni')">collega LinkedIn</a>.`}</p>
+  <div class="cols" style="margin-bottom:14px">
+    <div class="card"><b>✨ Nuovo video con l'AI locale</b>
+      <div class="row" style="margin:8px 0 0"><input id="v-tema" placeholder="Tema (es. cos'è un agente vocale)" style="flex:1"><button id="v-gen">Scrivi il copione</button></div>
+      <p class="small muted" style="margin:6px 0 0">Il copione compare qui sotto in bozza dopo qualche minuto.</p></div>
+    <div class="card"><b>🎙️ Voce</b>
+      <div class="row" style="margin:8px 0 0"><select id="v-voce">${[["", "Senza voce (solo testo)"], ...d.voci.map(v => [v, v])]
+        .map(([v, l]) => `<option value="${esc(v)}" ${v === (s.video_voce ?? "Alice") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
+      <button class="sec sm" id="v-voce-salva">Salva</button></div>
+      <p class="small muted" style="margin:6px 0 0">Dopo aver cambiato voce premi "Rifai il video" sui video da aggiornare.</p></div>
+  </div>
+  ${d.video.map(v => `<div class="card draft" style="margin-bottom:12px" data-id="${v.id}">
+    <div class="row" style="justify-content:space-between;margin:0">
+      <span><span class="tag">${ST[v.stato] || esc(v.stato)}</span> <b>${esc(v.tema)}</b></span>
+      <span class="small muted">📅 <input type="date" class="f-data" value="${esc(v.data_prevista || "")}" style="padding:2px 6px"> ${giorno(v.data_prevista)}</span></div>
+    <div style="display:flex;gap:14px;margin-top:8px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1 1 360px">
+        <label style="margin-top:0">Copione (una frase per riga = una scena; la chiusura "Seguimi…" si aggiunge da sola)</label>
+        <textarea class="f-copione" style="min-height:150px">${esc(v.copione)}</textarea>
+        <label>Testo del post</label><textarea class="f-testo" style="min-height:70px">${esc(v.testo)}</textarea></div>
+      <div style="flex:0 0 280px"><div class="v-box" style="width:280px;height:280px;border-radius:8px;border:1px solid var(--line);background:var(--line);display:grid;place-items:center">
+        <button class="sec sm" data-a="vedi">▶️ Guarda il video</button></div></div>
+    </div>
+    <div class="row" style="margin:8px 0 0">
+      ${v.stato === "bozza" ? `<button class="ok" data-a="approva">✅ Approva</button>` : ""}
+      ${v.stato !== "pubblicato" ? `<button class="sec" data-a="salva">💾 Salva</button><button class="sec" data-a="rifai">🎬 Rifai il video</button>` : ""}
+      ${v.stato !== "pubblicato" && d.collegato ? `<button data-a="pubblica">🚀 Pubblica ora</button>` : ""}
+      <button class="sec" data-a="file">📂 Mostra il file</button>
+      ${v.stato !== "pubblicato" ? `<button class="bad" data-a="scarta">Scarta</button>` : `<span class="small muted">pubblicato il ${dt(v.pubblicato_il)}</span>`}
+    </div></div>`).join("") || `<p class="muted">Nessun video.</p>`}`;
+  const guarda = c => { const box = $(".v-box", c); box.innerHTML = '<span class="small muted"><span class="spin"></span> Preparo il video…</span>';
+    return fetch(`/api/video/${c.dataset.id}/file?t=${Date.now()}`, {headers: {"X-Token": window.TOKEN}})
+      .then(r => r.ok ? r.blob() : Promise.reject(new Error("Video non disponibile")))
+      .then(b => { box.innerHTML = `<video controls autoplay style="width:280px;height:280px;border-radius:8px" src="${URL.createObjectURL(b)}"></video>`; })
+      .catch(e => { box.innerHTML = ""; toast(e.message, true); }); };
+  $("#v-gen").onclick = e => { const tema = $("#v-tema").value.trim(); if (!tema) return toast("Scrivi un tema", true);
+    run(e.target, () => api("/api/video/genera", {tema}), "L'AI sta scrivendo il copione: ricarica tra qualche minuto"); };
+  $("#v-voce-salva").onclick = e => run(e.target, () => api("/api/impostazioni", {video_voce: $("#v-voce").value}), "Voce salvata").then(refreshStato);
+  m.onclick = async e => {
+    const t = e.target, c = t.closest(".draft"); if (!c || !t.dataset.a) return;
+    const id = c.dataset.id, a = t.dataset.a;
+    const salva = extra => api(`/api/video/${id}`, {copione: $(".f-copione", c).value, testo: $(".f-testo", c).value,
+      data_prevista: $(".f-data", c).value, ...extra});
+    if (a === "vedi") return guarda(c);
+    if (a === "salva") return run(t, () => salva({}), "Salvato");
+    if (a === "rifai") return run(t, async () => { await salva({}); await api(`/api/video/${id}/rifai`, {}); }, "Video rifatto").then(() => guarda(c));
+    if (a === "file") return run(t, () => api(`/api/video/${id}/mostra`, {}), "Video selezionato nel Finder");
+    if (a === "approva") return run(t, () => salva({stato: "approvato"}), "Approvato").then(() => go("video"));
+    if (a === "scarta") return run(t, () => salva({stato: "scartato"})).then(() => go("video"));
+    if (a === "pubblica") return run(t, async () => { await salva({}); return api(`/api/video/${id}/pubblica`, {}); },
+      "✅ Video pubblicato su LinkedIn").then(r => { if (r?.ok) go("video"); });
   };
 };
 

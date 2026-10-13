@@ -12,7 +12,7 @@ import re
 import secrets
 import time
 from datetime import date
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -100,14 +100,30 @@ def _testo(t: str) -> str:
     return re.sub(r"\\#(\w+)", r"{hashtag|\\#|\1}", t)
 
 
-def pubblica(pid: int) -> dict:
+def _sessione() -> tuple[dict, dict]:
     t = _token()
     if not t:
         raise RuntimeError("LinkedIn non è collegato (o il collegamento è scaduto): Impostazioni → Collega LinkedIn")
+    return t, {"Authorization": f"Bearer {t['token']}", "LinkedIn-Version": _versione(), "X-Restli-Protocol-Version": "2.0.0"}
+
+
+def _crea_post(c: httpx.Client, h: dict, autore: str, testo: str, titolo: str, media: str) -> dict:
+    r = c.post("https://api.linkedin.com/rest/posts", headers=h, json={
+        "author": autore, "commentary": _testo(testo), "visibility": "PUBLIC",
+        "distribution": {"feedDistribution": "MAIN_FEED", "targetEntities": [], "thirdPartyDistributionChannels": []},
+        "content": {"media": {"title": titolo or "Post", "id": media}},
+        "lifecycleState": "PUBLISHED", "isReshareDisabledByAuthor": False})
+    if r.status_code >= 400:
+        raise RuntimeError(f"LinkedIn ha rifiutato il post ({r.status_code}): {r.text[:300]}")
+    urn = r.headers.get("x-restli-id", "")
+    return {"ok": True, "urn": urn, "url": f"https://www.linkedin.com/feed/update/{urn}/" if urn else ""}
+
+
+def pubblica(pid: int) -> dict:
     p = db.q("SELECT tema, testo, stato FROM post_linkedin WHERE id=?", (pid,))[0]
     if p["stato"] == "pubblicato":
         return {"ok": True, "gia": True}
-    h = {"Authorization": f"Bearer {t['token']}", "LinkedIn-Version": _versione(), "X-Restli-Protocol-Version": "2.0.0"}
+    t, h = _sessione()
     with httpx.Client(timeout=60) as c:
         r = c.post("https://api.linkedin.com/rest/images?action=initializeUpload", headers=h,
                    json={"initializeUploadRequest": {"owner": t["autore"]}})
@@ -115,29 +131,61 @@ def pubblica(pid: int) -> dict:
         up = r.json()["value"]
         c.put(up["uploadUrl"], headers={"Authorization": h["Authorization"]},
               content=linkedin_post.grafica(pid).read_bytes()).raise_for_status()
-        r = c.post("https://api.linkedin.com/rest/posts", headers=h, json={
-            "author": t["autore"], "commentary": _testo(p["testo"]), "visibility": "PUBLIC",
-            "distribution": {"feedDistribution": "MAIN_FEED", "targetEntities": [], "thirdPartyDistributionChannels": []},
-            "content": {"media": {"title": p["tema"] or "Post", "id": up["image"]}},
-            "lifecycleState": "PUBLISHED", "isReshareDisabledByAuthor": False})
-        if r.status_code >= 400:
-            raise RuntimeError(f"LinkedIn ha rifiutato il post ({r.status_code}): {r.text[:300]}")
-    urn = r.headers.get("x-restli-id", "")
+        esito = _crea_post(c, h, t["autore"], p["testo"], p["tema"], up["image"])
     linkedin_post.aggiorna(pid, {"stato": "pubblicato"})
     db.x("UPDATE attivita SET fatto=1, fatto_il=? WHERE uid LIKE ? AND fatto=0", (db.now(), f"%|linkedin|{pid}"))
     db.log("linkedin", f"Post pubblicato su LinkedIn con immagine: {p['tema']}")
-    return {"ok": True, "urn": urn, "url": f"https://www.linkedin.com/feed/update/{urn}/" if urn else ""}
+    return esito
+
+
+def pubblica_video(vid: int, attesa: float = 300) -> dict:
+    """Carica l'MP4 a pezzi (Videos API), aspetta che LinkedIn lo elabori e pubblica il post con il video."""
+    from . import video_brevi
+    v = db.q("SELECT tema, testo, stato FROM video_brevi WHERE id=?", (vid,))[0]
+    if v["stato"] == "pubblicato":
+        return {"ok": True, "gia": True}
+    dati = video_brevi.monta(vid).read_bytes()
+    t, h = _sessione()
+    with httpx.Client(timeout=120) as c:
+        r = c.post("https://api.linkedin.com/rest/videos?action=initializeUpload", headers=h, json={
+            "initializeUploadRequest": {"owner": t["autore"], "fileSizeBytes": len(dati),
+                                        "uploadCaptions": False, "uploadThumbnail": False}})
+        r.raise_for_status()
+        up = r.json()["value"]
+        parti = []
+        for istr in up["uploadInstructions"]:
+            rp = c.put(istr["uploadUrl"], headers={"Authorization": h["Authorization"]},
+                       content=dati[istr["firstByte"]:istr["lastByte"] + 1])
+            rp.raise_for_status()
+            parti.append(rp.headers.get("etag", "").strip('"'))
+        c.post("https://api.linkedin.com/rest/videos?action=finalizeUpload", headers=h, json={
+            "finalizeUploadRequest": {"video": up["video"], "uploadToken": up.get("uploadToken", ""),
+                                      "uploadedPartIds": parti}}).raise_for_status()
+        fine = time.time() + attesa
+        while True:                                      # LinkedIn deve elaborare il video prima del post
+            st = c.get(f"https://api.linkedin.com/rest/videos/{quote(up['video'])}", headers=h).json().get("status")
+            if st == "AVAILABLE":
+                break
+            if st == "PROCESSING_FAILED" or time.time() > fine:
+                raise RuntimeError(f"LinkedIn non ha elaborato il video (stato: {st})")
+            time.sleep(5)
+        esito = _crea_post(c, h, t["autore"], v["testo"], v["tema"], up["video"])
+    video_brevi.aggiorna(vid, {"stato": "pubblicato"})
+    db.log("linkedin", f"Video pubblicato su LinkedIn: {v['tema']}")
+    return esito
 
 
 def pubblica_di_oggi() -> dict:
-    """Routine: pubblica i post approvati con data di oggi (o passata). Senza collegamento non fa nulla."""
+    """Routine: pubblica post e video approvati con data di oggi (o passata). Senza collegamento non fa nulla."""
+    from . import video_brevi
     if not load_settings().get("linkedin_auto", True) or not _token():
         return {"ok": True, "pubblicati": 0}
     n = 0
-    for p in linkedin_post.di_oggi():
-        try:
-            pubblica(p["id"])
-            n += 1
-        except Exception as e:
-            db.log("linkedin", f"Pubblicazione non riuscita «{p['tema']}»: {e}", "errore")
+    for tipo, lista, fn in (("post", linkedin_post.di_oggi(), pubblica), ("video", video_brevi.di_oggi(), pubblica_video)):
+        for p in lista:
+            try:
+                fn(p["id"])
+                n += 1
+            except Exception as e:
+                db.log("linkedin", f"Pubblicazione {tipo} non riuscita «{p['tema']}»: {e}", "errore")
     return {"ok": True, "pubblicati": n}

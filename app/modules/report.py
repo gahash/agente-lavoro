@@ -48,7 +48,8 @@ def cruscotto(giorni: int = 1) -> dict:
                                                   f"{m['mittente']} {m['oggetto']}", re.I)]
     ricevute = [m for m in ricevute if m not in rimbalzi]
     from .linkedin_post import di_oggi, init as init_post
-    init_post()
+    from .video_brevi import init as init_video
+    init_post(), init_video()
     prossimo = db.q("SELECT tema, data_prevista FROM post_linkedin WHERE stato='approvato' AND data_prevista>? "
                     "ORDER BY data_prevista LIMIT 1", (date.today().isoformat(),))
     return {
@@ -64,7 +65,8 @@ def cruscotto(giorni: int = 1) -> dict:
         "in_coda_invio": db.q("SELECT COUNT(*) n FROM bozze WHERE stato='approvata' AND destinatario LIKE '%@%'")[0]["n"],
         "a_mano": db.q("SELECT COUNT(*) n FROM bozze WHERE stato='approvata' AND (destinatario IS NULL OR destinatario NOT LIKE '%@%')")[0]["n"],
         "da_approvare": db.q("SELECT COUNT(*) n FROM bozze WHERE stato='da_approvare'")[0]["n"],
-        "post_pubblicati": c("SELECT COUNT(*) n FROM post_linkedin WHERE stato='pubblicato' AND pubblicato_il>=?"),
+        "post_pubblicati": c("SELECT COUNT(*) n FROM post_linkedin WHERE stato='pubblicato' AND pubblicato_il>=?")
+                           + c("SELECT COUNT(*) n FROM video_brevi WHERE stato='pubblicato' AND pubblicato_il>=?"),
         "post_da_pubblicare": di_oggi(),
         "prossimo_post": prossimo[0] if prossimo else None,
         "aziende_trovate": c("SELECT COUNT(*) n FROM aziende WHERE creato>=?"),
