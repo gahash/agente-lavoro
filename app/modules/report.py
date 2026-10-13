@@ -28,15 +28,18 @@ def numeri() -> dict:
     }
 
 
-def cruscotto(giorni: int = 1) -> dict:
-    """Cosa è successo davvero nel periodo (oggi o ultimi N giorni): inviati, ricevuti, risposte, post, ricerche."""
+def cruscotto(giorni: int = 1, fine: date | None = None) -> dict:
+    """Cosa è successo davvero negli N giorni che finiscono il giorno `fine` (predefinito: oggi):
+    inviati, ricevuti, risposte, post, ricerche."""
     import re
-    da = (date.today() - timedelta(days=giorni - 1)).isoformat()
-    c = lambda sql, *a: db.q(sql, (da, *a))[0]["n"]
+    fine = fine or date.today()
+    da, a = (fine - timedelta(days=giorni - 1)).isoformat(), (fine + timedelta(days=1)).isoformat()
+    c = lambda sql: db.q(sql, (da, a))[0]["n"]
     inviate = db.q("SELECT id, tipo, destinatario, oggetto, inviato FROM bozze WHERE stato='inviata' AND inviato>=? "
-                   "ORDER BY inviato DESC", (da,))
+                   "AND inviato<? ORDER BY inviato DESC", (da, a))
     me = (load_settings().get("email") or "").lower()
-    ricevute = [m for m in db.q("SELECT id, mittente, oggetto, categoria, creato FROM posta WHERE creato>=? ORDER BY creato DESC", (da,))
+    ricevute = [m for m in db.q("SELECT id, mittente, oggetto, categoria, creato FROM posta WHERE creato>=? AND creato<? "
+                                     "ORDER BY creato DESC", (da, a))
                 if not me or me not in (m["mittente"] or "").lower()]
     # risposte: email arrivate da un dominio a cui abbiamo scritto (in qualunque momento)
     domini = {r["destinatario"].split("@")[-1].lower()
@@ -65,15 +68,15 @@ def cruscotto(giorni: int = 1) -> dict:
         "in_coda_invio": db.q("SELECT COUNT(*) n FROM bozze WHERE stato='approvata' AND destinatario LIKE '%@%'")[0]["n"],
         "a_mano": db.q("SELECT COUNT(*) n FROM bozze WHERE stato='approvata' AND (destinatario IS NULL OR destinatario NOT LIKE '%@%')")[0]["n"],
         "da_approvare": db.q("SELECT COUNT(*) n FROM bozze WHERE stato='da_approvare'")[0]["n"],
-        "post_pubblicati": c("SELECT COUNT(*) n FROM post_linkedin WHERE stato='pubblicato' AND pubblicato_il>=?")
-                           + c("SELECT COUNT(*) n FROM video_brevi WHERE stato='pubblicato' AND pubblicato_il>=?"),
+        "post_pubblicati": c("SELECT COUNT(*) n FROM post_linkedin WHERE stato='pubblicato' AND pubblicato_il>=? AND pubblicato_il<?")
+                           + c("SELECT COUNT(*) n FROM video_brevi WHERE stato='pubblicato' AND pubblicato_il>=? AND pubblicato_il<?"),
         "post_da_pubblicare": di_oggi(),
         "prossimo_post": prossimo[0] if prossimo else None,
-        "aziende_trovate": c("SELECT COUNT(*) n FROM aziende WHERE creato>=?"),
-        "annunci_trovati": c("SELECT COUNT(*) n FROM opportunita WHERE creato>=?"),
-        "errori": c("SELECT COUNT(*) n FROM eventi WHERE livello='errore' AND quando>=?"),
-        "eventi": db.q("SELECT quando, livello, modulo, messaggio FROM eventi WHERE quando>=? AND modulo NOT IN ('app','pianificatore') "
-                       "ORDER BY id DESC LIMIT 25", (da,)),
+        "aziende_trovate": c("SELECT COUNT(*) n FROM aziende WHERE creato>=? AND creato<?"),
+        "annunci_trovati": c("SELECT COUNT(*) n FROM opportunita WHERE creato>=? AND creato<?"),
+        "errori": c("SELECT COUNT(*) n FROM eventi WHERE livello='errore' AND quando>=? AND quando<?"),
+        "eventi": db.q("SELECT quando, livello, modulo, messaggio FROM eventi WHERE quando>=? AND quando<? "
+                       "AND modulo NOT IN ('app','pianificatore') ORDER BY id DESC LIMIT 25", (da, a)),
     }
 
 
@@ -114,6 +117,62 @@ def report(tipo: str = "mattino") -> dict:
     f.write_text(testo, encoding="utf-8")
     db.log("report", f"Report {tipo} generato")
     return {"file": str(f), "testo": testo}
+
+
+TIPI_BOZZA = {"proposta_pmi": "proposte a PMI", "candidatura": "candidature", "follow_up": "solleciti", "risposta": "risposte"}
+
+
+def testo_attivita(giorno: date) -> str:
+    """Riepilogo in chiaro di tutto quello che l'agente ha fatto in un giorno (per l'email di report)."""
+    c = cruscotto(1, giorno)
+    d0, d1 = giorno.isoformat(), (giorno + timedelta(days=1)).isoformat()
+    tra = lambda col: f"{col}>='{d0}' AND {col}<'{d1}'"
+    nome = ("lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica")[giorno.weekday()]
+    righe = [f"ATTIVITÀ DI {nome.upper()} {giorno:%d/%m/%Y}", ""]
+    per_tipo = ", ".join(f"{k} {TIPI_BOZZA.get(t, t)}" for t, k in c["inviate_per_tipo"].items())
+    righe.append(f"✉️ Email inviate: {c['inviate']}" + (f" ({per_tipo})" if per_tipo else ""))
+    righe += [f"   • {b['destinatario']} — {b['oggetto']}"
+              for b in db.q(f"SELECT destinatario, oggetto FROM bozze WHERE stato='inviata' AND {tra('inviato')} ORDER BY inviato")]
+    righe.append(f"📥 Email ricevute: {c['ricevute']}   💬 Risposte dai contattati: {c['risposte']}   ⚠️ Non consegnate: {c['rimbalzi']}")
+    righe += [f"   • RISPOSTA da {m['mittente']} — {m['oggetto']}" for m in c["ultime_risposte"]]
+    pub = db.q(f"SELECT 'Post' k, tema FROM post_linkedin WHERE stato='pubblicato' AND {tra('pubblicato_il')} "
+               f"UNION ALL SELECT 'Video', tema FROM video_brevi WHERE stato='pubblicato' AND {tra('pubblicato_il')}")
+    righe.append(f"📣 LinkedIn pubblicati: {len(pub)}")
+    righe += [f"   • {p['k']}: {p['tema']}" for p in pub]
+    righe.append(f"🔎 Aziende trovate: {c['aziende_trovate']}   💼 Annunci trovati: {c['annunci_trovati']}")
+    nuove = db.q(f"SELECT tipo, COUNT(*) n FROM bozze WHERE {tra('creato')} GROUP BY tipo")
+    if nuove:
+        righe.append("✍️ Bozze scritte: " + ", ".join(f"{r['n']} {TIPI_BOZZA.get(r['tipo'], r['tipo'])}" for r in nuove))
+    righe += ["", "IN ATTESA DI TE",
+              f"   • Bozze da approvare: {c['da_approvare']}",
+              f"   • Candidature da inviare a mano (dal link dell'annuncio): {c['a_mano']}",
+              f"   • Email approvate in coda di invio: {c['in_coda_invio']}"]
+    if c["errori"]:
+        righe += ["", f"❌ ERRORI: {c['errori']}"]
+        righe += [f"   • {e['quando'][11:16]} {e['modulo']}: {e['messaggio'][:160]}"
+                  for e in db.q(f"SELECT quando, modulo, messaggio FROM eventi WHERE livello='errore' AND {tra('quando')} "
+                                "ORDER BY id DESC LIMIT 5")]
+    righe += ["", "DIARIO"] + [f"   {e['quando'][11:16]}  {e['messaggio'][:180]}" for e in reversed(c["eventi"])]
+    return "\n".join(righe)
+
+
+def report_con_email(tipo: str) -> dict:
+    """Routine: report del mattino (attività di ieri + piano di oggi) o della sera (attività di oggi), anche via email."""
+    from . import posta
+    r = report(tipo)
+    oggi = date.today()
+    if tipo == "mattino":
+        corpo = testo_attivita(oggi - timedelta(days=1)) + "\n\n" + "=" * 40 + "\nPIANO DI OGGI\n\n" + r["testo"]
+        oggetto = f"📊 Report del mattino — attività di ieri e piano di oggi ({oggi:%d/%m})"
+    else:
+        corpo = testo_attivita(oggi)
+        oggetto = f"📊 Report della sera — attività di oggi ({oggi:%d/%m})"
+    try:
+        posta.invia_a_me(oggetto, corpo + "\n\n— Agente Lavoro")
+        db.log("report", f"Report {tipo} inviato via email")
+    except Exception as e:
+        db.log("report", f"Email del report {tipo} non inviata: {e}", "errore")
+    return r
 
 
 def esporta_excel() -> str:

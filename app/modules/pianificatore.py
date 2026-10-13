@@ -73,9 +73,9 @@ def avvia() -> None:
     sched.add_job(_safe("portali", portali_routine), "cron", day_of_week="mon-fri", hour=hp % 24, minute=mp,
                   id="portali")
     h, m = _hm(s["report_mattino"])
-    sched.add_job(_safe("report", report.report, "mattino"), "cron", hour=h, minute=m, id="rep_m")
+    sched.add_job(_safe("report", report.report_con_email, "mattino"), "cron", hour=h, minute=m, id="rep_m")
     h, m = _hm(s["report_sera"])
-    sched.add_job(_safe("report", report.report, "sera"), "cron", hour=h, minute=m, id="rep_s")
+    sched.add_job(_safe("report", report.report_con_email, "sera"), "cron", hour=h, minute=m, id="rep_s")
     sched.add_job(_safe("report", report.report, "settimanale"), "cron", day_of_week="fri", hour=17, id="rep_w")
     sched.add_job(_safe("attivita", attivita.genera), "cron", hour=7, minute=0, id="attivita")
     sched.add_job(_safe("follow-up", bozze.follow_up_dovuti), "cron", day_of_week="mon-fri", hour=8, minute=40,
@@ -118,7 +118,7 @@ def recupero_avvio() -> None:
             portali_routine()
         tipo = "sera" if datetime.now().hour >= 18 else "mattino"
         if not (REPORTS / f"{oggi}_{tipo}.md").exists():
-            _safe("report", report.report, tipo)()
+            _safe("report", report.report_con_email, tipo)()
         if datetime.now().strftime("%H:%M") >= load_settings()["linkedin_ora"]:
             _safe("linkedin", linkedin_api.pubblica_di_oggi)()
         _safe("attivita", attivita.genera)()

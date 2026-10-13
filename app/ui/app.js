@@ -228,16 +228,19 @@ V.chat = async m => {
   const invia = async testo => {
     testo = (testo ?? $("#q").value).trim(); if (!testo) return;
     $("#q").value = ""; $(".sugg")?.remove(); $("#send").disabled = true;
-    box.insertAdjacentHTML("beforeend", `<div class="msg u">${esc(testo)}</div><div class="msg a"><span class="spin"></span></div>`);
+    box.insertAdjacentHTML("beforeend", `<div class="msg u">${esc(testo)}</div><div class="msg a"><span class="spin"></span> <span class="small muted">Sto pensando…</span></div>`);
     const out = box.lastElementChild; box.scrollTop = box.scrollHeight;
+    const t0 = Date.now(), attesa = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000);   // il modello locale può metterci minuti
+      const nota = $(".small", out); if (nota) nota.textContent = s < 20 ? "Sto pensando…"
+        : `L'AI locale sta elaborando (${s} s). Senza scheda grafica può volerci qualche minuto, soprattutto se l'app sta già lavorando.`; }, 1000);
     try {
       const r = await fetch("/api/chat", {method: "POST", headers: {"Content-Type": "application/json", "X-Token": window.TOKEN}, body: JSON.stringify({testo})});
       if (!r.ok) throw new Error((await r.json()).detail);
       const rd = r.body.getReader(), dec = new TextDecoder(); let txt = "";
-      for (;;) { const {done, value} = await rd.read(); if (done) break; txt += dec.decode(value, {stream: true}); out.textContent = txt; box.scrollTop = box.scrollHeight; }
+      for (;;) { const {done, value} = await rd.read(); if (done) break; clearInterval(attesa); txt += dec.decode(value, {stream: true}); out.textContent = txt; box.scrollTop = box.scrollHeight; }
       if (/aggiunto alle cose da fare/i.test(txt)) aggiornaBadgeTodo();
     } catch (e) { out.textContent = "⚠️ " + e.message; }
-    finally { $("#send").disabled = false; $("#q").focus(); }
+    finally { clearInterval(attesa); $("#send").disabled = false; $("#q").focus(); }
   };
   $("#send").onclick = () => invia();
   $("#q").onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); invia(); } };

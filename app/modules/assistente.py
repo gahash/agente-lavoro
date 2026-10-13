@@ -54,13 +54,50 @@ GIORNI = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato",
 COMANDO_AGGIUNGI = re.compile(r"^\s*(?:\+|aggiungi(?: alla lista| alle cose da fare)?\s*:)\s*(?:(\d{1,2}[:.]\d{2})\s+)?(.+)$", re.I)
 
 
+AZIONI = [  # richieste operative eseguite subito, senza aspettare il modello AI (lento sul Mac senza GPU)
+    ("clienti", re.compile(r"\b(trova|trovami|cerca|cercami|nuov[ie])\b.*\b(client|aziend|pmi)", re.I)),
+    ("annunci", re.compile(r"\b(trova|trovami|cerca|cercami|nuov[ie])\b.*\b(annunc|lavor|offert|candidatur)", re.I)),
+    ("posta", re.compile(r"\b(controlla|leggi|scarica|guarda)\b.*\b(posta|email|e-mail|mail)", re.I)),
+    ("riepilogo", re.compile(r"\b(report|riepilogo|resoconto)\b|cosa (hai|ho|abbiamo) fatto|attivit[aà] (di )?oggi", re.I)),
+]
+
+
+def _in_background(nome: str, fn) -> None:
+    import threading
+
+    def lavora():
+        try:
+            fn()
+        except Exception as e:
+            db.log("assistente", f"{nome}: {e}", "errore")
+    threading.Thread(target=lavora, daemon=True, name=nome).start()
+
+
 def comando(testo: str) -> str | None:
-    """Comandi rapidi senza AI: '+ 15:00 chiamare Rossi' oppure 'aggiungi: preparare preventivo'."""
+    """Comandi rapidi senza AI: '+ 15:00 chiamare Rossi', 'aggiungi: preparare preventivo', 'trovami clienti'..."""
     m = COMANDO_AGGIUNGI.match(testo)
     if m:
         ora = (m.group(1) or "").replace(".", ":")
         attivita.aggiungi(m.group(2).strip(), ora=ora)
         return f"✅ Aggiunto alle cose da fare di oggi{(' alle ' + ora) if ora else ''}: **{m.group(2).strip()}**"
+    azione = next((nome for nome, rx in AZIONI if rx.search(testo)), None)
+    if azione == "clienti":
+        from . import caccia
+        r = caccia.avvia_in_background()
+        if not r.get("ok"):
+            return "⏳ " + r.get("errore", "La ricerca clienti è già in corso.")
+        return ("🔎 Ho avviato la ricerca di nuovi clienti: cerco aziende, analizzo i loro siti e scrivo le proposte. "
+                "Segui la barra in basso a destra; le proposte pronte finiscono in ✍️ Da approvare (o partono da sole se superano i controlli).")
+    if azione == "annunci":
+        from . import lavoro
+        _in_background("annunci", lavoro.cerca)
+        return "💼 Ho avviato la ricerca di nuovi annunci (anche Hacker News). Tra qualche minuto li trovi in 💼 Opportunità lavoro."
+    if azione == "posta":
+        from . import posta
+        _in_background("posta", posta.controlla)
+        return "📬 Sto controllando la posta: tra un minuto trovi i nuovi messaggi in 📬 Posta."
+    if azione == "riepilogo":
+        return report.testo_attivita(date.today())
     return None
 
 
