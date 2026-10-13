@@ -9,7 +9,8 @@ from ..core import db
 from ..core.config import load_settings
 from . import agenda, attivita, bozze, caccia, lavoro, linkedin_api, posta, report
 
-sched = BackgroundScheduler(timezone="Europe/Rome")
+sched = BackgroundScheduler(timezone="Europe/Rome",   # in ritardo (Mac carico o in stop) le routine partono lo stesso, una volta sola
+                            job_defaults={"misfire_grace_time": 3600, "coalesce": True})
 
 
 def _safe(nome, fn, *a, **kw):
