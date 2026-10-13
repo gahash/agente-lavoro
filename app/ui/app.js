@@ -48,22 +48,88 @@ async function refreshStato() {
 // ------------------------------------------------------------------ viste
 const V = {};
 
+const JOB = {posta: "📬 Controllo posta", invio: "✉️ Invio email approvate", caccia: "🔎 Ricerca clienti", lavoro: "💼 Ricerca annunci",
+  portali: "🌐 Portali lavoro", rep_m: "📝 Report del mattino", rep_s: "📝 Report della sera", rep_w: "📝 Report settimanale",
+  attivita: "✅ Cose da fare", linkedin: "📣 Pubblicazione post LinkedIn", followup: "🔁 Solleciti", agenda: "📅 Agenda del giorno"};
+const MOD = {posta: "✉️", caccia: "🔎", pmi: "🏢", lavoro: "💼", portali: "🌐", agenda: "📅", linkedin: "📣", report: "📝",
+  crm: "🗂️", browser: "🌐", github: "📦", progetti: "📦", ai: "🤖", api: "⚙️"};
+const TIPO = {proposta_pmi: "proposte a PMI", candidatura: "candidature", follow_up: "solleciti"};
+const esitoPubblica = r => r.modo === "api" ? "✅ Pubblicato su LinkedIn con l'immagine"
+  : `LinkedIn aperto con il testo pronto. ${r.appunti ? "L'immagine è negli appunti: clicca nel post e premi ⌘V" : "Trascina l'immagine nel post"}, poi "Pubblica"`;
+const ora = s => s ? new Date(s).toLocaleTimeString("it-IT", {hour: "2-digit", minute: "2-digit"}) : "";
+const nome = m => esc((m || "").replace(/<.*>/, "").replace(/"/g, "").trim() || m);
+
 V.home = async m => {
   await refreshStato(); const n = STATO.numeri;
-  m.innerHTML = `<h1>Buongiorno Gaspare</h1><p class="sub">${new Date().toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"})} — cosa c'è da fare oggi</p>
+  const periodo = V.home.giorni || 1;
+  const c = await api(`/api/cruscotto?giorni=${periodo}`);
+  const quando = periodo === 1 ? "oggi" : `negli ultimi ${periodo} giorni`;
+  const quandoEra = s => periodo === 1 ? ora(s) : dt(s);
+  const giornoIt = s => new Date(s + "T12:00").toLocaleDateString("it-IT", {weekday: "long", day: "numeric", month: "long"});
+  const box = (num, label, colore, vista, nota) => `<div class="card kpi big" ${vista ? `data-go="${vista}" style="cursor:pointer"` : ""}>
+    <b style="${colore ? `color:var(--${colore})` : ""}">${num}</b><span>${label}</span>${nota ? `<em>${nota}</em>` : ""}</div>`;
+  const prossimi = STATO.pianificazione.filter(j => j.id !== "promemoria" && j.prossima)
+    .map(j => ({...j, k: j.prossima.slice(3, 5) + j.prossima.slice(0, 2) + j.prossima.slice(6)}))
+    .sort((x, y) => x.k.localeCompare(y.k)).slice(0, 6);
+  const attesa = [
+    [n.bozze_da_approvare, "bozze da approvare", "bozze"],
+    [c.a_mano, "candidature approvate da inviare a mano (dal link dell'annuncio)", "bozze"],
+    [n.posta_da_gestire, "email a cui rispondere", "posta"],
+    [n.posta_allarmi, "email sospette", "posta"],
+    [n.follow_up_scaduti, "solleciti da fare", "pipeline"],
+    [n.opportunita_top, `annunci con punteggio ≥ ${STATO.impostazioni.soglia_annunci} da valutare`, "lavoro"],
+  ].filter(x => x[0]);
+
+  m.innerHTML = `<h1>Buongiorno Gaspare</h1><p class="sub">${new Date().toLocaleDateString("it-IT",{weekday:"long",day:"numeric",month:"long"})}</p>
   ${!STATO.modelli.length ? `<div class="warnbox">Il modello AI locale non risponde. Avvia <b>Ollama</b>: il modello <b>${esc(STATO.impostazioni.modello)}</b> viene scaricato in automatico (una volta sola) e poi ricarica.</div>` : ""}
   ${!STATO.credenziali.imap_password.impostato ? `<div class="warnbox">Credenziali email non inserite: vai su <a href="#" onclick="go('impostazioni')">Impostazioni</a>.</div>` : ""}
+
+  ${c.post_da_pubblicare.map(p => `<div class="card callout">
+    <div><b>📣 Oggi c'è da pubblicare il post LinkedIn «${esc(p.tema)}»</b>
+    <p class="small muted" style="margin:4px 0 0">${STATO.linkedin.collegato
+      ? `LinkedIn è collegato: esce da solo con l'immagine alle ${esc(STATO.impostazioni.linkedin_ora)}. Premi <b>Pubblica ora</b> per non aspettare.`
+      : `Per farlo uscire da solo con l'immagine <a href="#" data-go="impostazioni">collega LinkedIn nelle Impostazioni</a> (una volta sola).
+         Intanto: <b>Pubblica ora</b> apre LinkedIn con il testo pronto e l'immagine negli appunti (⌘V), poi premi <b>L'ho pubblicato</b>.`}</p></div>
+    <div class="row" style="margin:0;flex-shrink:0"><button data-pub="${p.id}">🚀 Pubblica ora</button>${STATO.linkedin.collegato ? "" : `<button class="sec" data-fatto="${p.id}">✓ L'ho pubblicato</button>`}</div>
+  </div>`).join("")}
+
+  <div class="row" style="justify-content:space-between;margin:18px 0 10px"><h2 style="margin:0">📊 Cosa è successo ${quando}</h2>
+    <div class="seg">${[[1, "Oggi"], [7, "7 giorni"], [30, "30 giorni"]].map(([g, l]) => `<button class="${g === periodo ? "" : "sec"} sm" data-giorni="${g}">${l}</button>`).join("")}</div></div>
   <div class="grid">
-    <div class="card kpi"><b>${n.bozze_da_approvare}</b><span>bozze da approvare</span></div>
-    <div class="card kpi"><b>${n.posta_da_gestire}</b><span>email da gestire</span></div>
-    <div class="card kpi"><b style="color:var(--bad)">${n.posta_allarmi}</b><span>email sospette</span></div>
-    <div class="card kpi"><b>${n.opportunita_top}</b><span>annunci ≥ ${STATO.impostazioni.soglia_annunci}</span></div>
-    <div class="card kpi"><b>${n.aziende_nuove}</b><span>PMI da lavorare</span></div>
-    <div class="card kpi"><b>${n.quota_pmi_residua}</b><span>contatti PMI disponibili oggi</span></div>
-    <div class="card kpi"><b>${n.follow_up_scaduti}</b><span>follow-up da fare</span></div>
+    ${box(c.inviate, "email inviate", "ok", "bozze", Object.entries(c.inviate_per_tipo).map(([t, k]) => `${k} ${TIPO[t] || t}`).join(" · "))}
+    ${box(c.ricevute, "email ricevute", "", "posta")}
+    ${box(c.risposte, "risposte dai contattati", c.risposte ? "ok" : "", "posta")}
+    ${box(c.rimbalzi, "email non consegnate", c.rimbalzi ? "bad" : "", "posta", c.rimbalzi ? "indirizzo errato o casella piena" : "")}
+    ${box(c.post_pubblicati, "post LinkedIn pubblicati", "", "linkedin", c.prossimo_post ? `prossimo: ${giornoIt(c.prossimo_post.data_prevista)}` : "")}
+    ${box(c.aziende_trovate, "aziende trovate", "", "pmi")}
+    ${box(c.annunci_trovati, "annunci trovati", "", "lavoro")}
   </div>
+
+  <div class="cols" style="margin-top:14px">
+    <div class="card"><b>✉️ Inviate</b>${c.ultime_inviate.map(b => `<div class="riga"><span class="t-ora">${quandoEra(b.inviato)}</span>
+      <span><b>${esc(b.destinatario)}</b><br><span class="small muted">${esc(b.oggetto)}</span></span></div>`).join("") || `<p class="small muted">Nessuna email inviata ${quando}.</p>`}</div>
+    <div class="card"><b>📥 Ricevute</b>${c.ultime_ricevute.map(r => `<div class="riga"><span class="t-ora">${quandoEra(r.creato)}</span>
+      <span><b>${nome(r.mittente)}</b><br><span class="small muted">${esc(r.oggetto)}</span></span></div>`).join("") || `<p class="small muted">Nessuna email ricevuta ${quando}.</p>`}</div>
+  </div>
+
+  <h2>⏳ Aspetta te</h2>
+  <div class="card" style="padding:4px 0">${attesa.map(([k, l, v]) => `<div class="riga link" data-go="${v}"><b class="num">${k}</b><span>${l}</span><span class="small" style="margin-left:auto">apri →</span></div>`).join("")
+    || `<p class="muted" style="padding:6px 14px">Niente in attesa. 🎉</p>`}</div>
+
   <h2>✅ Cose da fare oggi <a href="#" data-go="todo" class="small" style="font-weight:400">tutte →</a></h2>
   <div class="card" style="padding:0" id="home-todo"></div>
+
+  <div class="cols" style="margin-top:4px">
+    <div><h2>🧾 Diario ${quando} <a href="#" data-go="registro" class="small" style="font-weight:400">tutto →</a></h2>
+    <div class="card" style="max-height:360px;overflow:auto">${c.eventi.map(e => `<div class="riga ${e.livello === "errore" ? "err" : ""}">
+      <span class="t-ora">${quandoEra(e.quando)}</span><span>${MOD[e.modulo] || "•"} ${esc(e.messaggio)}</span></div>`).join("")
+      || `<p class="small muted">Ancora nessuna attività ${quando}.</p>`}</div></div>
+    <div><h2>🤖 Prossimi automatismi</h2>
+    <div class="card">${prossimi.map(j => `<div class="riga"><span class="t-ora" style="width:86px">${esc(j.prossima)}</span>
+      <span>${JOB[j.id.replace(/\d+$/, "")] || JOB[j.id] || esc(j.id)}</span></div>`).join("")}
+      <p class="small muted" style="margin:8px 0 0">Funzionano solo con l'app aperta. ${STATO.impostazioni.approvazione_automatica ? `Proposte e solleciti che superano tutti i controlli si approvano da soli (max ${STATO.impostazioni.auto_max_giorno} al giorno); il resto aspetta il tuo OK.` : "Nessun messaggio parte senza la tua approvazione."}</p></div></div>
+  </div>
+
   <h2>Azioni rapide</h2>
   <div class="row">
     <button id="q-posta">📬 Controlla posta</button>
@@ -71,12 +137,14 @@ V.home = async m => {
     <button class="sec" id="q-rep">📝 Report del mattino</button>
     <button class="sec" id="q-xls">📊 Esporta Excel</button>
   </div>
-  <div id="rep" class="card md small" style="display:none"></div>
-  <h2>Pianificazione automatica (con l'app aperta)</h2>
-  <div class="small muted">${STATO.pianificazione.map(j => `${esc(j.id)}: ${esc(j.prossima)}`).join(" · ")}</div>
-  <p class="small muted">${STATO.impostazioni.approvazione_automatica ? `Proposte e solleciti che superano tutti i controlli si approvano da soli (max ${STATO.impostazioni.auto_max_giorno} al giorno); il resto aspetta il tuo OK in Da approvare.` : "Le routine preparano solo dati, analisi e bozze. Nessun messaggio parte senza la tua approvazione."}</p>`;
+  <div id="rep" class="card md small" style="display:none"></div>`;
   const disegnaTodo = async () => { const l = await aggiornaBadgeTodo(); $("#home-todo").innerHTML = todoHtml(l.filter(a => !a.fatto).slice(0, 8), true); };
   await disegnaTodo(); todoEvents(m, disegnaTodo);
+  m.querySelectorAll("[data-giorni]").forEach(b => b.onclick = () => { V.home.giorni = +b.dataset.giorni; go("home"); });
+  m.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => run(b, () => api(`/api/linkedin/post/${b.dataset.pub}/pubblica`, {}), esitoPubblica)
+    .then(r => { if (r?.modo === "api") go("home"); }));
+  m.querySelectorAll("[data-fatto]").forEach(b => b.onclick = () => run(b, () => api(`/api/linkedin/post/${b.dataset.fatto}`, {stato: "pubblicato"}),
+    "Post segnato come pubblicato").then(() => go("home")));
   $("#q-posta").onclick = e => run(e.target, () => api("/api/posta/controlla", {}), r => `Posta: ${r.nuovi} nuovi messaggi`);
   $("#q-lavoro").onclick = e => run(e.target, () => api("/api/lavoro/cerca", {ai: true}), r => `Annunci: ${r.nuovi} nuovi su ${r.letti}, ${r.valutati_ai} valutati con AI`);
   $("#q-rep").onclick = e => run(e.target, async () => { const r = await api("/api/report/mattino", {}); const b = $("#rep"); b.style.display = ""; b.textContent = r.testo; });
@@ -95,7 +163,7 @@ function todoHtml(lista, compatta) {
 function todoEvents(m, ridisegna) {
   m.addEventListener("change", e => { const id = e.target.dataset.done; if (id) api(`/api/attivita/${id}`, {fatto: e.target.checked}).then(ridisegna); });
   m.addEventListener("click", e => {
-    if (e.target.dataset.go) { e.preventDefault(); go(e.target.dataset.go); }
+    const g = e.target.closest("[data-go]"); if (g) { e.preventDefault(); go(g.dataset.go); }
     if (e.target.dataset.del) api(`/api/attivita/${e.target.dataset.del}`, {elimina: true}).then(ridisegna);
   });
 }
@@ -373,7 +441,8 @@ V.linkedin = async m => {
   const giorno = s => s ? new Date(s + "T12:00").toLocaleDateString("it-IT", {weekday: "short", day: "2-digit", month: "2-digit"}) : "—";
   m.innerHTML = `<h1>Post LinkedIn</h1>
   <p class="sub">Calendario editoriale: ${d.post.filter(p => p.stato !== "pubblicato").length} post in programma, martedì e giovedì.
-   Rileggi e approva; il giorno previsto premi <b>🚀 Pubblica</b>: LinkedIn si apre con il testo già pronto, tu premi "Pubblica".</p>
+   ${STATO.linkedin.collegato ? `Rileggi e approva: il giorno previsto alle ${esc(STATO.impostazioni.linkedin_ora)} il post esce da solo con la sua immagine.`
+     : `Rileggi e approva; il giorno previsto premi <b>🚀 Pubblica</b>. Per la pubblicazione automatica con immagine <a href="#" onclick="go('impostazioni')">collega LinkedIn</a>.`}</p>
   <div class="card" style="margin-bottom:14px"><b>✨ Nuovo post con l'AI locale</b>
     <div class="row" style="margin:8px 0 0"><input id="li-tema" list="li-temi" placeholder="Tema del post (es. un progetto, una lezione imparata…)" style="flex:1">
     <datalist id="li-temi">${d.temi.map(t => `<option value="${esc(t)}">`).join("")}</datalist>
@@ -417,9 +486,8 @@ V.linkedin = async m => {
     if (a === "approva") return run(t, () => salva({stato: "approvato"}), "Approvato").then(() => go("linkedin"));
     if (a === "scarta") return run(t, () => salva({stato: "scartato"})).then(() => go("linkedin"));
     if (a === "fatto") return run(t, () => salva({stato: "pubblicato"}), "Segnato come pubblicato").then(() => go("linkedin"));
-    if (a === "pubblica") { await salva({}); await navigator.clipboard.writeText(campi.testo).catch(() => {});
-      return run(t, () => api(`/api/linkedin/post/${id}/pubblica`, {}),
-        "LinkedIn aperto con il testo pronto (anche negli appunti) e l'immagine selezionata nel Finder: trascinala nel post. Poi premi \"Segna come pubblicato\""); }
+    if (a === "pubblica") { await salva({});
+      return run(t, () => api(`/api/linkedin/post/${id}/pubblica`, {}), esitoPubblica).then(r => { if (r?.modo === "api") go("linkedin"); }); }
   };
 };
 
@@ -661,6 +729,18 @@ V.impostazioni = async m => {
     <label>Pagina lead/contatti</label><input id="s-crm_url_lead" value="${esc(s.crm_url_lead)}" style="width:100%">
     <label>Quale browser usare</label><select id="s-browser_modalita">${[["personale","Il mio Chrome (profilo che uso) + segnalibro ⭐"],["app","Chrome separato comandato dall'app"]].map(([v,l]) => `<option value="${v}" ${v===(s.browser_modalita||"personale")?"selected":""}>${l}</option>`).join("")}</select>
     <label>Browser</label><select id="s-browser_canale">${["chrome","msedge"].map(x => `<option ${x===s.browser_canale?"selected":""}>${x}</option>`).join("")}</select>
+    <h2>📣 Pubblicazione automatica su LinkedIn</h2>
+    ${STATO.linkedin.collegato
+      ? `<p class="small">✅ Collegato${STATO.linkedin.nome ? " come <b>" + esc(STATO.linkedin.nome) + "</b>" : ""} fino al ${esc(STATO.linkedin.scade)}.</p>`
+      : `<ol class="small muted" style="padding-left:18px;margin:6px 0">
+          <li>Su <a href="https://www.linkedin.com/developers/apps/new" target="_blank">linkedin.com/developers</a> crea un'app (serve una pagina aziendale qualsiasi, anche la tua).</li>
+          <li>In <b>Products</b> aggiungi <b>Share on LinkedIn</b> e <b>Sign In with LinkedIn using OpenID Connect</b>.</li>
+          <li>In <b>Auth</b> aggiungi l'URL di reindirizzamento <code>${esc(STATO.linkedin.redirect)}</code>.</li>
+          <li>Copia Client ID e Client Secret nel riquadro 🔐 Credenziali (in alto), salva, poi premi <b>Collega LinkedIn</b>.</li></ol>`}
+    <div class="row"><button class="sm" id="li-collega" ${STATO.linkedin.configurato ? "" : "disabled"}>${STATO.linkedin.collegato ? "🔄 Ricollega" : "🔗 Collega LinkedIn"}</button>
+      ${STATO.linkedin.collegato ? `<button class="sm sec" id="li-scollega">Scollega</button>` : ""}</div>
+    <label><input type="checkbox" id="s-linkedin_auto" ${s.linkedin_auto ? "checked" : ""}> Pubblica da solo i post approvati, il giorno previsto alle</label>
+    <input id="s-linkedin_ora" value="${esc(s.linkedin_ora)}">
     <h2>🔗 LinkedIn · Indeed</h2>
     <label>Ricerche (separate da virgola)</label><textarea id="s-ricerche_portali" style="min-height:60px">${esc((s.ricerche_portali || []).join(", "))}</textarea>
     <label><input type="checkbox" id="s-portali_auto" ${s.portali_auto ? "checked" : ""}> Ogni mattina importa da LinkedIn, Indeed e gestionale (solo se collegati; apre Chrome per qualche minuto)</label></div>
@@ -692,6 +772,8 @@ V.impostazioni = async m => {
   $("#s-auto").onchange = e => run(null, () => api("/api/avvio-automatico", {attivo: e.target.checked}),
     r => r.attivo ? "Partirà all'accensione del PC" : "Avvio automatico disattivato");
   $("#prova-c").onclick = e => provaPosta(e.target);
+  $("#li-collega").onclick = e => run(e.target, () => api("/api/linkedin/collega", {}), "Autorizza l'app nella pagina di LinkedIn che si è aperta, poi torna qui e ricarica");
+  if ($("#li-scollega")) $("#li-scollega").onclick = e => run(e.target, () => api("/api/linkedin/scollega", {}), "LinkedIn scollegato").then(() => go("impostazioni"));
   $("#save-c").onclick = e => { const d = {}; Object.keys(c).forEach(k => { const v = $("#c-" + k).value; if (v !== "" || !c[k].segreto) d[k] = v; });
     run(e.target, () => api("/api/credenziali", d), "Credenziali salvate nel Gestore credenziali di Windows").then(() => go("impostazioni")); };
   $("#save-s").onclick = e => {
@@ -700,7 +782,8 @@ V.impostazioni = async m => {
       follow_up_giorni: +$("#s-follow_up_giorni").value, modello: $("#s-modello").value, ollama_url: $("#s-ollama_url").value,
       imap_host: $("#s-imap_host").value, imap_port: +$("#s-imap_port").value, smtp_host: $("#s-smtp_host").value, smtp_port: +$("#s-smtp_port").value,
       cartella_bozze: $("#s-cartella_bozze").value, crm_url_login: $("#s-crm_url_login").value, crm_url_lead: $("#s-crm_url_lead").value,
-      browser_canale: $("#s-browser_canale").value, browser_modalita: $("#s-browser_modalita").value, ricerche_portali: lst("#s-ricerche_portali"), portali_auto: $("#s-portali_auto").checked, headline: $("#s-headline").value, firma: $("#s-firma").value,
+      browser_canale: $("#s-browser_canale").value, browser_modalita: $("#s-browser_modalita").value, ricerche_portali: lst("#s-ricerche_portali"), portali_auto: $("#s-portali_auto").checked,
+      linkedin_auto: $("#s-linkedin_auto").checked, linkedin_ora: $("#s-linkedin_ora").value.trim(), headline: $("#s-headline").value, firma: $("#s-firma").value,
       competenze: lst("#s-competenze"), contratti: lst("#s-contratti"), parole_chiave: lst("#s-parole_chiave"),
       progetti_vetrina: $("#s-progetti").value.split("\n").filter(x => x.trim()).map(r => { const [nome, tema, link] = r.split("|").map(x => (x || "").trim()); return {nome, tema, link}; }),
       routine: $("#s-routine").value.split("\n").filter(x => x.trim()).map(r => { const [ora, titolo, vista] = r.split("|").map(x => (x || "").trim()); return titolo ? {ora, titolo, vista: vista || ""} : {ora: "", titolo: ora, vista: ""}; }),

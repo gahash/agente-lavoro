@@ -14,15 +14,18 @@ CAMPI = {
     "imap_user": "Email (utente IMAP/SMTP)",
     "imap_password": "Password email / password per app",
     "gestionale_token": "Token agenda del gestionale (AGENTE_API_TOKEN in config.php)",
+    "linkedin_client_id": "LinkedIn · Client ID (app su linkedin.com/developers)",
+    "linkedin_client_secret": "LinkedIn · Client Secret",
 }
-SEGRETI = {"imap_password", "gestionale_token"}
+SEGRETI = {"imap_password", "gestionale_token", "linkedin_client_secret"}
+INTERNE = {"linkedin_token"}          # scritte solo dall'app (mai mostrate né modificabili dalla UI)
 
 
 _cache: dict[str, str | None] = {}
 
 
 def set_cred(key: str, value: str) -> None:
-    if key not in CAMPI:
+    if key not in CAMPI and key not in INTERNE:
         raise KeyError(key)
     _cache.pop(key, None)
     if value:

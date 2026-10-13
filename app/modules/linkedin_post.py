@@ -246,6 +246,18 @@ def mostra_grafica(pid: int) -> dict:
     return {"ok": True, "file": str(dest)}
 
 
+def immagine_negli_appunti(pid: int) -> bool:
+    """Mette la grafica negli appunti del Mac: nel riquadro di LinkedIn basta premere ⌘V."""
+    import subprocess
+    import sys
+    if sys.platform != "darwin":
+        return False
+    dest = str(grafica(pid)).replace('"', '\\"')
+    r = subprocess.run(["osascript", "-e", f'set the clipboard to (read (POSIX file "{dest}") as «class PNGf»)'],
+                       capture_output=True, timeout=10)
+    return r.returncode == 0
+
+
 def link_pubblica(pid: int) -> str:
     """Apre LinkedIn con il testo del post già inserito nel riquadro di pubblicazione."""
     testo = db.q("SELECT testo FROM post_linkedin WHERE id=?", (pid,))[0]["testo"]

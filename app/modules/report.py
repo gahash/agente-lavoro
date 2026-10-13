@@ -28,6 +28,53 @@ def numeri() -> dict:
     }
 
 
+def cruscotto(giorni: int = 1) -> dict:
+    """Cosa è successo davvero nel periodo (oggi o ultimi N giorni): inviati, ricevuti, risposte, post, ricerche."""
+    import re
+    da = (date.today() - timedelta(days=giorni - 1)).isoformat()
+    c = lambda sql, *a: db.q(sql, (da, *a))[0]["n"]
+    inviate = db.q("SELECT id, tipo, destinatario, oggetto, inviato FROM bozze WHERE stato='inviata' AND inviato>=? "
+                   "ORDER BY inviato DESC", (da,))
+    me = (load_settings().get("email") or "").lower()
+    ricevute = [m for m in db.q("SELECT id, mittente, oggetto, categoria, creato FROM posta WHERE creato>=? ORDER BY creato DESC", (da,))
+                if not me or me not in (m["mittente"] or "").lower()]
+    # risposte: email arrivate da un dominio a cui abbiamo scritto (in qualunque momento)
+    domini = {r["destinatario"].split("@")[-1].lower()
+              for r in db.q("SELECT destinatario FROM bozze WHERE stato='inviata' AND destinatario LIKE '%@%'")}
+    domini -= {"gmail.com", "libero.it", "hotmail.it", "hotmail.com", "yahoo.it", "outlook.it", "icloud.com"}
+    dom = lambda m: (re.findall(r"@([\w.-]+)", m or "") or [""])[-1].lower()
+    risposte = [m for m in ricevute if dom(m["mittente"]) in domini]
+    rimbalzi = [m for m in ricevute if re.search(r"mailer-daemon|postmaster|mail delivery|undeliver|non recapitat|delivery status",
+                                                  f"{m['mittente']} {m['oggetto']}", re.I)]
+    ricevute = [m for m in ricevute if m not in rimbalzi]
+    from .linkedin_post import di_oggi, init as init_post
+    init_post()
+    prossimo = db.q("SELECT tema, data_prevista FROM post_linkedin WHERE stato='approvato' AND data_prevista>? "
+                    "ORDER BY data_prevista LIMIT 1", (date.today().isoformat(),))
+    return {
+        "giorni": giorni,
+        "inviate": len(inviate),
+        "inviate_per_tipo": {t: sum(1 for b in inviate if b["tipo"] == t) for t in {b["tipo"] for b in inviate}},
+        "ultime_inviate": inviate[:8],
+        "ricevute": len(ricevute),
+        "ultime_ricevute": ricevute[:8],
+        "risposte": len(risposte),
+        "rimbalzi": len(rimbalzi),
+        "ultime_risposte": risposte[:5],
+        "in_coda_invio": db.q("SELECT COUNT(*) n FROM bozze WHERE stato='approvata' AND destinatario LIKE '%@%'")[0]["n"],
+        "a_mano": db.q("SELECT COUNT(*) n FROM bozze WHERE stato='approvata' AND (destinatario IS NULL OR destinatario NOT LIKE '%@%')")[0]["n"],
+        "da_approvare": db.q("SELECT COUNT(*) n FROM bozze WHERE stato='da_approvare'")[0]["n"],
+        "post_pubblicati": c("SELECT COUNT(*) n FROM post_linkedin WHERE stato='pubblicato' AND pubblicato_il>=?"),
+        "post_da_pubblicare": di_oggi(),
+        "prossimo_post": prossimo[0] if prossimo else None,
+        "aziende_trovate": c("SELECT COUNT(*) n FROM aziende WHERE creato>=?"),
+        "annunci_trovati": c("SELECT COUNT(*) n FROM opportunita WHERE creato>=?"),
+        "errori": c("SELECT COUNT(*) n FROM eventi WHERE livello='errore' AND quando>=?"),
+        "eventi": db.q("SELECT quando, livello, modulo, messaggio FROM eventi WHERE quando>=? AND modulo NOT IN ('app','pianificatore') "
+                       "ORDER BY id DESC LIMIT 25", (da,)),
+    }
+
+
 def report(tipo: str = "mattino") -> dict:
     s = load_settings()
     n = numeri()

@@ -7,7 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from ..core import db
 from ..core.config import load_settings
-from . import agenda, attivita, bozze, caccia, lavoro, posta, report
+from . import agenda, attivita, bozze, caccia, lavoro, linkedin_api, posta, report
 
 sched = BackgroundScheduler(timezone="Europe/Rome")
 
@@ -91,6 +91,9 @@ def avvia() -> None:
     h, m = _hm(s["agenda_mattino"])
     sched.add_job(_safe("agenda", agenda.email_mattino), "cron", hour=h, minute=m, id="agenda")
     sched.add_job(_safe_agenda(agenda.promemoria), "interval", minutes=5, id="promemoria")
+    h, m = _hm(s["linkedin_ora"])
+    sched.add_job(_safe("linkedin", linkedin_api.pubblica_di_oggi), "cron", hour=h, minute=m, id="linkedin",
+                  misfire_grace_time=3600)
     if not sched.running:
         sched.start()
 
@@ -116,6 +119,8 @@ def recupero_avvio() -> None:
         tipo = "sera" if datetime.now().hour >= 18 else "mattino"
         if not (REPORTS / f"{oggi}_{tipo}.md").exists():
             _safe("report", report.report, tipo)()
+        if datetime.now().strftime("%H:%M") >= load_settings()["linkedin_ora"]:
+            _safe("linkedin", linkedin_api.pubblica_di_oggi)()
         _safe("attivita", attivita.genera)()
         db.log("pianificatore", "Avvio: attività completate")
 

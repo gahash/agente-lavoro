@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .core import db, llm, vault
 from .core.config import APP_NAME, DATA, UI_DIR, VERSION, load_settings, save_settings
-from .modules import (agenda, assistente, attivita, caccia, bozze, browser, github_massivo, lavoro, pianificatore, pmi, ponte, profili, linkedin_post,
+from .modules import (agenda, assistente, attivita, caccia, bozze, browser, github_massivo, lavoro, pianificatore, pmi, ponte, profili, linkedin_post, linkedin_api,
                       portali, posta, progetti, report, sistema)
 
 # token di sessione: solo la finestra dell'app lo conosce (protegge da altri siti aperti nel browser)
@@ -52,8 +52,13 @@ A = [Depends(auth)]
 def stato():
     return {"numeri": report.numeri(), "modelli": llm.modelli(), "download_modello": llm.DOWNLOAD,
             "impostazioni": load_settings(),
-            "credenziali": vault.stato(), "pianificazione": pianificatore.stato(), "cartella_dati": str(DATA),
+            "credenziali": vault.stato(), "linkedin": linkedin_api.stato(), "pianificazione": pianificatore.stato(), "cartella_dati": str(DATA),
             "avvio_automatico": sistema.avvio_automatico_attivo()}
+
+
+@app.get("/api/cruscotto", dependencies=A)
+def cruscotto(giorni: int = 1):
+    return report.cruscotto(max(1, min(giorni, 90)))
 
 
 @app.post("/api/impostazioni", dependencies=A)
@@ -276,10 +281,42 @@ def li_grafica_mostra(pid: int):
 
 @app.post("/api/linkedin/post/{pid}/pubblica", dependencies=A)
 def li_post_pubblica(pid: int):
+    if linkedin_api.stato()["collegato"]:          # pubblicazione diretta con l'API ufficiale: testo + immagine
+        return {**ok(linkedin_api.pubblica, pid), "modo": "api"}
     url = linkedin_post.link_pubblica(pid)
     r = ponte.apri(url) if ponte.personale() else ok(browser.apri, url)
-    ok(linkedin_post.mostra_grafica, pid)          # l'immagine pronta nel Finder, da trascinare nel post
-    return r
+    return {**r, "modo": "assistito", "appunti": ok(linkedin_post.immagine_negli_appunti, pid)}
+
+
+@app.get("/api/linkedin/collegamento", dependencies=A)
+def li_collegamento():
+    return linkedin_api.stato()
+
+
+@app.post("/api/linkedin/collega", dependencies=A)
+def li_collega():
+    url = ok(linkedin_api.url_collega)
+    return ponte.apri(url) if ponte.personale() else ok(browser.apri, url)
+
+
+@app.post("/api/linkedin/scollega", dependencies=A)
+def li_scollega():
+    return linkedin_api.scollega()
+
+
+@app.get("/api/linkedin/oauth", response_class=HTMLResponse)
+def li_oauth(code: str = "", state: str = "", error_description: str = ""):
+    """Ritorno da LinkedIn (senza token dell'app: lo protegge il parametro state monouso)."""
+    try:
+        if not code:
+            raise RuntimeError(error_description or "Autorizzazione annullata")
+        s = linkedin_api.completa(code, state)
+        msg = f"✅ LinkedIn collegato{' come ' + s['nome'] if s['nome'] else ''}. I post approvati usciranno da soli, con l'immagine."
+    except Exception as e:
+        db.log("linkedin", f"Collegamento non riuscito: {e}", "errore")
+        msg = f"❌ Collegamento non riuscito: {e}"
+    from html import escape
+    return f"<meta charset=utf-8><body style='font:16px system-ui;padding:40px'><p>{escape(msg)}</p><p>Puoi chiudere questa scheda e tornare ad Agente Lavoro.</p>"
 
 
 @app.post("/api/linkedin/genera", dependencies=A)

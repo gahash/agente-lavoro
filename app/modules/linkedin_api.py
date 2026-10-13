@@ -1,0 +1,127 @@
+"""Pubblicazione automatica dei post LinkedIn (testo + immagine) con l'API ufficiale "Share on LinkedIn".
+
+È l'unico modo consentito da LinkedIn per pubblicare senza clic: Gaspare crea una volta un'app su
+linkedin.com/developers, inserisce Client ID e Client Secret nelle Impostazioni e preme "Collega LinkedIn".
+Il token (valido circa 60 giorni) resta nel Portachiavi. All'ora prevista i post approvati del giorno
+escono da soli con la loro grafica.
+"""
+from __future__ import annotations
+
+import json
+import re
+import secrets
+import time
+from datetime import date
+from urllib.parse import urlencode
+
+import httpx
+
+from ..core import db, vault
+from ..core.config import load_settings
+from . import linkedin_post
+
+REDIRECT = "http://localhost:8000/api/linkedin/oauth"
+SCOPE = "openid profile w_member_social"
+_stati: dict[str, float] = {}          # parametri "state" emessi, per verificare il ritorno da LinkedIn
+
+
+def _versione() -> str:
+    return load_settings().get("linkedin_api_versione", "202605")
+
+
+def _token() -> dict | None:
+    t = vault.get_cred("linkedin_token")
+    try:
+        t = json.loads(t) if t else None
+    except ValueError:
+        return None
+    return t if t and t.get("scade", 0) > time.time() + 60 else None
+
+
+def stato() -> dict:
+    t = _token()
+    return {"configurato": bool(vault.get_cred("linkedin_client_id") and vault.get_cred("linkedin_client_secret")),
+            "collegato": bool(t), "nome": (t or {}).get("nome", ""), "redirect": REDIRECT,
+            "scade": date.fromtimestamp(t["scade"]).isoformat() if t else ""}
+
+
+def url_collega() -> str:
+    cid = vault.get_cred("linkedin_client_id")
+    if not cid or not vault.get_cred("linkedin_client_secret"):
+        raise RuntimeError("Inserisci Client ID e Client Secret di LinkedIn nelle Impostazioni")
+    st = secrets.token_urlsafe(16)
+    _stati[st] = time.time()
+    return "https://www.linkedin.com/oauth/v2/authorization?" + urlencode(
+        {"response_type": "code", "client_id": cid, "redirect_uri": REDIRECT, "state": st, "scope": SCOPE})
+
+
+def completa(code: str, state: str) -> dict:
+    """Ritorno da LinkedIn dopo il consenso: scambia il codice con il token e lo salva nel Portachiavi."""
+    if time.time() - _stati.pop(state, 0) > 900:
+        raise RuntimeError("Richiesta scaduta o non valida: riprova da Impostazioni → Collega LinkedIn")
+    r = httpx.post("https://www.linkedin.com/oauth/v2/accessToken", timeout=30, data={
+        "grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT,
+        "client_id": vault.get_cred("linkedin_client_id"), "client_secret": vault.get_cred("linkedin_client_secret")})
+    r.raise_for_status()
+    d = r.json()
+    me = httpx.get("https://api.linkedin.com/v2/userinfo", timeout=30,
+                   headers={"Authorization": f"Bearer {d['access_token']}"}).json()
+    vault.set_cred("linkedin_token", json.dumps({"token": d["access_token"], "scade": time.time() + d.get("expires_in", 0),
+                                                 "autore": f"urn:li:person:{me['sub']}", "nome": me.get("name", "")}))
+    db.log("linkedin", f"LinkedIn collegato per la pubblicazione automatica ({me.get('name', '')})")
+    return stato()
+
+
+def scollega() -> dict:
+    vault.set_cred("linkedin_token", "")
+    db.log("linkedin", "LinkedIn scollegato")
+    return stato()
+
+
+def _testo(t: str) -> str:
+    """Il campo del post usa il formato "little text": i caratteri riservati vanno protetti, gli hashtag marcati."""
+    t = re.sub(r"([\\|{}@\[\]()<>#*_~])", r"\\\1", t)
+    return re.sub(r"\\#(\w+)", r"{hashtag|\\#|\1}", t)
+
+
+def pubblica(pid: int) -> dict:
+    t = _token()
+    if not t:
+        raise RuntimeError("LinkedIn non è collegato (o il collegamento è scaduto): Impostazioni → Collega LinkedIn")
+    p = db.q("SELECT tema, testo, stato FROM post_linkedin WHERE id=?", (pid,))[0]
+    if p["stato"] == "pubblicato":
+        return {"ok": True, "gia": True}
+    h = {"Authorization": f"Bearer {t['token']}", "LinkedIn-Version": _versione(), "X-Restli-Protocol-Version": "2.0.0"}
+    with httpx.Client(timeout=60) as c:
+        r = c.post("https://api.linkedin.com/rest/images?action=initializeUpload", headers=h,
+                   json={"initializeUploadRequest": {"owner": t["autore"]}})
+        r.raise_for_status()
+        up = r.json()["value"]
+        c.put(up["uploadUrl"], headers={"Authorization": h["Authorization"]},
+              content=linkedin_post.grafica(pid).read_bytes()).raise_for_status()
+        r = c.post("https://api.linkedin.com/rest/posts", headers=h, json={
+            "author": t["autore"], "commentary": _testo(p["testo"]), "visibility": "PUBLIC",
+            "distribution": {"feedDistribution": "MAIN_FEED", "targetEntities": [], "thirdPartyDistributionChannels": []},
+            "content": {"media": {"title": p["tema"] or "Post", "id": up["image"]}},
+            "lifecycleState": "PUBLISHED", "isReshareDisabledByAuthor": False})
+        if r.status_code >= 400:
+            raise RuntimeError(f"LinkedIn ha rifiutato il post ({r.status_code}): {r.text[:300]}")
+    urn = r.headers.get("x-restli-id", "")
+    linkedin_post.aggiorna(pid, {"stato": "pubblicato"})
+    db.x("UPDATE attivita SET fatto=1, fatto_il=? WHERE uid LIKE ? AND fatto=0", (db.now(), f"%|linkedin|{pid}"))
+    db.log("linkedin", f"Post pubblicato su LinkedIn con immagine: {p['tema']}")
+    return {"ok": True, "urn": urn, "url": f"https://www.linkedin.com/feed/update/{urn}/" if urn else ""}
+
+
+def pubblica_di_oggi() -> dict:
+    """Routine: pubblica i post approvati con data di oggi (o passata). Senza collegamento non fa nulla."""
+    if not load_settings().get("linkedin_auto", True) or not _token():
+        return {"ok": True, "pubblicati": 0}
+    n = 0
+    for p in linkedin_post.di_oggi():
+        try:
+            pubblica(p["id"])
+            n += 1
+        except Exception as e:
+            db.log("linkedin", f"Pubblicazione non riuscita «{p['tema']}»: {e}", "errore")
+    return {"ok": True, "pubblicati": n}

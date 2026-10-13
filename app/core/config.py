@@ -120,6 +120,8 @@ DEFAULTS: dict = {
     "caccia_interesse_min": 6,                  # su 10, dall'analisi del sito
     "linkedin_giorni": [1, 3],                  # post LinkedIn: martedì e giovedì (0 = lunedì)
     "linkedin_ora": "08:30",
+    "linkedin_auto": True,                      # con LinkedIn collegato, i post approvati escono da soli all'ora prevista
+    "linkedin_api_versione": "202605",          # intestazione LinkedIn-Version dell'API (formato AAAAMM)
     "invio_approvate": ["08:55", "11:15", "13:55", "16:20", "18:40"],  # partono solo le bozze già approvate
 }
 
