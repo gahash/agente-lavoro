@@ -58,5 +58,20 @@ class VideoBreviTests(unittest.TestCase):
         self.assertEqual("pubblicato", db.q("SELECT stato FROM video_brevi WHERE id=?", (vid,))[0]["stato"])
 
 
+    def test_carica_mov_convertito_in_mp4_e_separato_dai_video_brevi(self):
+        vid = db.x("INSERT INTO video_brevi (tema, copione, testo) VALUES ('Prova','Una frase abbastanza lunga.','x')")
+        mp4 = vb.monta(vid)
+        sorgente = mp4.parent / "registrazione.tmp"
+        sorgente.write_bytes(mp4.read_bytes())
+        r = vb.carica(sorgente, "Il mio video.mov")
+        self.assertTrue(r["ok"], r)
+        f = vb.monta(r["id"])
+        self.assertEqual(".mp4", f.suffix)
+        self.assertEqual(b"ftyp", f.read_bytes()[4:8])
+        self.assertEqual([r["id"]], [v["id"] for v in vb.lista(caricati=True)])
+        self.assertNotIn(r["id"], [v["id"] for v in vb.lista()])
+        self.assertFalse(vb.carica(mp4.parent / "x.tmp", "foto.jpg")["ok"])
+
+
 if __name__ == "__main__":
     unittest.main()

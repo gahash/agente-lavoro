@@ -69,6 +69,8 @@ SERIE_INIZIALE = [
 
 def init() -> None:
     db.x(SCHEMA)
+    if "file" not in {c["name"] for c in db.q("PRAGMA table_info(video_brevi)")}:
+        db.x("ALTER TABLE video_brevi ADD COLUMN file TEXT")      # video caricato da Gaspare (non montato dall'app)
 
 
 def _prossime_date(n: int, da: date | None = None) -> list[str]:
@@ -97,9 +99,49 @@ def crea_serie_iniziale() -> int:
     return len(SERIE_INIZIALE)
 
 
-def lista() -> list[dict]:
+def lista(caricati: bool = False) -> list[dict]:
     init()
-    return db.q("SELECT * FROM video_brevi WHERE stato<>'scartato' ORDER BY stato='pubblicato', data_prevista, id")
+    return db.q(f"SELECT * FROM video_brevi WHERE stato<>'scartato' AND origine {'=' if caricati else 'IS NOT'} 'caricato' "
+                "ORDER BY stato='pubblicato', data_prevista, id")
+
+
+ESTENSIONI = {".mp4", ".mov", ".m4v"}
+
+
+def carica(sorgente: Path, nome: str) -> dict:
+    """Salva un video registrato da Gaspare (titolo, testo e data si impostano dopo, con aggiorna).
+    LinkedIn vuole MP4: i .mov/.m4v si convertono con ffmpeg."""
+    import imageio_ffmpeg
+    init()
+    ext = Path(nome or "").suffix.lower()
+    if ext not in ESTENSIONI:
+        sorgente.unlink(missing_ok=True)
+        return {"ok": False, "errore": "Formato non supportato: carica un video MP4 o MOV"}
+    vid = db.x("INSERT INTO video_brevi (tema, copione, testo, data_prevista, origine, creato) VALUES (?,?,?,?,?,?)",
+               (Path(nome).stem[:120], "", "", _prima_data_libera(), "caricato", db.now()))
+    cartella = CARTELLA / "caricati"
+    cartella.mkdir(parents=True, exist_ok=True)
+    grezzo = cartella / f"video_{vid}_originale{ext}"
+    sorgente.rename(grezzo)
+    dest = cartella / f"video_{vid}.mp4"
+    if ext == ".mp4":
+        grezzo.rename(dest)
+    else:
+        r = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(grezzo),
+                            "-c:v", "libx264", "-preset", "medium", "-crf", "21", "-pix_fmt", "yuv420p",
+                            "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dest)],
+                           capture_output=True, text=True, timeout=1800)
+        if r.returncode != 0:
+            db.x("DELETE FROM video_brevi WHERE id=?", (vid,))
+            return {"ok": False, "errore": "Conversione in MP4 non riuscita: " + r.stderr[:300]}
+        grezzo.unlink(missing_ok=True)
+    if dest.stat().st_size < 75_000:
+        db.x("DELETE FROM video_brevi WHERE id=?", (vid,))
+        dest.unlink(missing_ok=True)
+        return {"ok": False, "errore": "Il video è troppo piccolo per LinkedIn"}
+    db.x("UPDATE video_brevi SET file=? WHERE id=?", (str(dest), vid))
+    db.log("video", f"Video caricato: {nome}")
+    return {"ok": True, "id": vid}
 
 
 def aggiorna(vid: int, campi: dict) -> dict:
@@ -197,6 +239,9 @@ def _scena(base: Image.Image, frase: str, etichetta: str, finale: bool) -> Image
 
 def monta(vid: int, forza: bool = False) -> Path:
     """Crea (o riusa) l'MP4 del video: scene animate + voce italiana."""
+    caricato = db.q("SELECT file FROM video_brevi WHERE id=?", (vid,))[0]["file"]
+    if caricato:                                      # registrato da Gaspare: si usa così com'è
+        return Path(caricato)
     dest = percorso(vid)
     if dest.exists() and not forza:
         return dest

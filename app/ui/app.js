@@ -571,6 +571,80 @@ V.video = async m => {
   };
 };
 
+// carica un file con barra di avanzamento (fetch non dà il progresso dell'invio)
+function caricaFile(url, file, progresso) {
+  return new Promise((ok, ko) => {
+    const x = new XMLHttpRequest(); x.open("POST", url); x.setRequestHeader("X-Token", window.TOKEN);
+    x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.upload.onprogress = e => e.lengthComputable && progresso(e.loaded / e.total);
+    x.onload = () => { let d = {}; try { d = JSON.parse(x.responseText); } catch {}
+      x.status < 300 ? ok(d) : ko(new Error(d.detail || `Errore ${x.status}`)); };
+    x.onerror = () => ko(new Error("Caricamento interrotto")); x.send(file);
+  });
+}
+
+V.mieivideo = async m => {
+  const d = await api("/api/video?caricati=true");
+  const ST = {bozza: "📝 Bozza", approvato: "✅ In programma", pubblicato: "🚀 Pubblicato"};
+  const giorno = s => s ? new Date(s + "T12:00").toLocaleDateString("it-IT", {weekday: "short", day: "2-digit", month: "2-digit"}) : "—";
+  m.innerHTML = `<h1>I miei video</h1>
+  <p class="sub">Carica i video che registri tu (MP4 o MOV, anche dal telefono). ${d.collegato
+    ? `Escono da soli su LinkedIn il giorno scelto alle ${esc(STATO.impostazioni.linkedin_ora)}, oppure subito con 🚀 Pubblica ora.`
+    : `Per pubblicarli <a href="#" onclick="go('impostazioni')">collega LinkedIn</a>.`}
+    Consigli: verticale o quadrato, 30–90 secondi, sottotitoli già nel video (su LinkedIn partono senza audio).</p>
+  <div class="card" style="margin-bottom:14px"><b>⬆️ Nuovo video</b>
+    <div class="row" style="margin:10px 0 0"><input type="file" id="mv-file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v"></div>
+    <label>Titolo (lo vedi tu nell'elenco)</label><input id="mv-tema" style="width:100%" placeholder="es. Come lavoro con i clienti">
+    <label>Testo del post</label><textarea id="mv-testo" style="min-height:90px" placeholder="Cosa scrivere sopra al video, con 3-5 hashtag"></textarea>
+    <label>Data di pubblicazione (vuota = prossimo mercoledì o venerdì libero)</label><input type="date" id="mv-data">
+    <div class="row" style="margin:12px 0 0"><button id="mv-carica">⬆️ Carica e programma</button>
+      <span class="small muted" id="mv-prog"></span></div></div>
+  ${d.video.map(v => `<div class="card draft" style="margin-bottom:12px" data-id="${v.id}">
+    <div class="row" style="justify-content:space-between;margin:0">
+      <span><span class="tag">${ST[v.stato] || esc(v.stato)}</span> <input class="f-tema" value="${esc(v.tema)}" style="font-weight:600;min-width:260px"></span>
+      <span class="small muted">📅 <input type="date" class="f-data" value="${esc(v.data_prevista || "")}" style="padding:2px 6px"> ${giorno(v.data_prevista)}</span></div>
+    <div style="display:flex;gap:14px;margin-top:8px;align-items:flex-start;flex-wrap:wrap">
+      <textarea class="f-testo" style="min-height:140px;flex:1 1 360px">${esc(v.testo)}</textarea>
+      <div class="v-box" style="width:280px;height:200px;border-radius:8px;border:1px solid var(--line);background:var(--line);display:grid;place-items:center">
+        <button class="sec sm" data-a="vedi">▶️ Guarda</button></div></div>
+    <div class="row" style="margin:8px 0 0">
+      ${v.stato === "bozza" ? `<button class="ok" data-a="approva">✅ Programma</button>` : ""}
+      ${v.stato !== "pubblicato" ? `<button class="sec" data-a="salva">💾 Salva</button>` : ""}
+      ${v.stato !== "pubblicato" && d.collegato ? `<button data-a="pubblica">🚀 Pubblica ora</button>` : ""}
+      <button class="sec" data-a="file">📂 Mostra il file</button>
+      ${v.stato !== "pubblicato" ? `<button class="bad" data-a="scarta">Elimina</button>` : `<span class="small muted">pubblicato il ${dt(v.pubblicato_il)}</span>`}
+    </div></div>`).join("") || `<p class="muted">Nessun video caricato.</p>`}`;
+  $("#mv-carica").onclick = async e => {
+    const file = $("#mv-file").files[0], testo = $("#mv-testo").value.trim();
+    if (!file) return toast("Scegli il video da caricare", true);
+    if (!testo) return toast("Scrivi il testo del post", true);
+    const prog = $("#mv-prog");
+    await run(e.target, async () => {
+      const r = await caricaFile(`/api/video/carica?nome=${encodeURIComponent(file.name)}`, file,
+        p => { prog.textContent = p < 1 ? `Caricamento ${Math.round(p * 100)}%` : "Preparo il video per LinkedIn…"; });
+      if (!r.ok) return r;
+      return api(`/api/video/${r.id}`, {tema: $("#mv-tema").value.trim() || file.name.replace(/\.[^.]+$/, ""), testo,
+        stato: "approvato", ...($("#mv-data").value ? {data_prevista: $("#mv-data").value} : {})});
+    }, "Video caricato e programmato");
+    prog.textContent = ""; go("mieivideo");
+  };
+  m.onclick = async e => {
+    const t = e.target, c = t.closest(".draft"); if (!c || !t.dataset.a) return;
+    const id = c.dataset.id, a = t.dataset.a;
+    const salva = extra => api(`/api/video/${id}`, {tema: $(".f-tema", c).value, testo: $(".f-testo", c).value,
+      data_prevista: $(".f-data", c).value, ...extra});
+    if (a === "vedi") { const box = $(".v-box", c); box.innerHTML = '<span class="small muted"><span class="spin"></span></span>';
+      return fetch(`/api/video/${id}/file`, {headers: {"X-Token": window.TOKEN}}).then(r => r.blob())
+        .then(b => { box.innerHTML = `<video controls autoplay style="width:280px;max-height:200px;border-radius:8px" src="${URL.createObjectURL(b)}"></video>`; }); }
+    if (a === "salva") return run(t, () => salva({}), "Salvato");
+    if (a === "file") return run(t, () => api(`/api/video/${id}/mostra`, {}), "Video selezionato nel Finder");
+    if (a === "approva") return run(t, () => salva({stato: "approvato"}), "Programmato").then(() => go("mieivideo"));
+    if (a === "scarta") return run(t, () => salva({stato: "scartato"})).then(() => go("mieivideo"));
+    if (a === "pubblica") return run(t, async () => { await salva({}); return api(`/api/video/${id}/pubblica`, {}); },
+      "✅ Video pubblicato su LinkedIn").then(r => { if (r?.ok) go("mieivideo"); });
+  };
+};
+
 V.profili = async m => {
   const d = await api("/api/profili");
   const P = d.profili, NOMI = {linkedin: "LinkedIn", indeed: "Indeed"};

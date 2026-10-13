@@ -291,8 +291,22 @@ def li_post_pubblica(pid: int):
 
 
 @app.get("/api/video", dependencies=A)
-def video_lista():
-    return {"video": video_brevi.lista(), "voci": video_brevi.voci(), "collegato": linkedin_api.stato()["collegato"]}
+def video_lista(caricati: bool = False):
+    return {"video": video_brevi.lista(caricati), "voci": video_brevi.voci(), "collegato": linkedin_api.stato()["collegato"]}
+
+
+@app.post("/api/video/carica", dependencies=A)
+async def video_carica(request: Request, nome: str = ""):
+    """Il file arriva come corpo grezzo della richiesta (niente moduli multipart) e si scrive su disco a pezzi."""
+    import asyncio
+    import secrets as _s
+    cartella = video_brevi.CARTELLA / "caricati"
+    cartella.mkdir(parents=True, exist_ok=True)
+    tmp = cartella / f".arrivo-{_s.token_hex(6)}"
+    with open(tmp, "wb") as f:
+        async for pezzo in request.stream():
+            f.write(pezzo)
+    return await asyncio.to_thread(lambda: ok(video_brevi.carica, tmp, nome))
 
 
 @app.post("/api/video/genera", dependencies=A)
