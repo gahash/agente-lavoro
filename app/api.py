@@ -283,9 +283,11 @@ def li_grafica_mostra(pid: int):
 def li_post_pubblica(pid: int):
     if linkedin_api.stato()["collegato"]:          # pubblicazione diretta con l'API ufficiale: testo + immagine
         return {**ok(linkedin_api.pubblica, pid), "modo": "api"}
-    url = linkedin_post.link_pubblica(pid)
+    appunti = ok(linkedin_post.testo_negli_appunti, pid)
+    ok(linkedin_post.mostra_grafica, pid)          # l'immagine selezionata nel Finder, da trascinare nel post
+    url = linkedin_post.link_pubblica()
     r = ponte.apri(url) if ponte.personale() else ok(browser.apri, url)
-    return {**r, "modo": "assistito", "appunti": ok(linkedin_post.immagine_negli_appunti, pid)}
+    return {**r, "modo": "assistito", "appunti": appunti}
 
 
 @app.get("/api/linkedin/collegamento", dependencies=A)
@@ -297,6 +299,11 @@ def li_collegamento():
 def li_collega():
     url = ok(linkedin_api.url_collega)
     return ponte.apri(url) if ponte.personale() else ok(browser.apri, url)
+
+
+@app.post("/api/linkedin/token", dependencies=A)
+def li_token(data: dict = Body(...)):
+    return ok(linkedin_api.usa_token, data.get("token", ""))
 
 
 @app.post("/api/linkedin/scollega", dependencies=A)

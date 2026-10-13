@@ -1,13 +1,12 @@
 """Contenuti LinkedIn: calendario editoriale, approvazione e pubblicazione assistita.
 
 I post si preparano qui (scritti a mano, dal modello AI locale o dalla serie iniziale), Gaspare li approva
-e il giorno previsto li pubblica con un clic: si apre LinkedIn con il testo già nel riquadro del post e
-basta premere "Pubblica". L'app non pubblica da sola (i termini di LinkedIn vietano l'automazione).
+e il giorno previsto escono da soli con l'API ufficiale (vedi linkedin_api). Senza collegamento la pubblicazione
+è assistita: si apre il riquadro del post, il testo è negli appunti e l'immagine selezionata nel Finder.
 """
 from __future__ import annotations
 
 from datetime import date, timedelta
-from urllib.parse import quote
 
 from ..core import db, llm
 from ..core.config import load_settings
@@ -246,22 +245,19 @@ def mostra_grafica(pid: int) -> dict:
     return {"ok": True, "file": str(dest)}
 
 
-def immagine_negli_appunti(pid: int) -> bool:
-    """Mette la grafica negli appunti del Mac: nel riquadro di LinkedIn basta premere ⌘V."""
+def testo_negli_appunti(pid: int) -> bool:
+    """Mette il testo del post negli appunti del Mac: nel riquadro di LinkedIn basta premere ⌘V."""
     import subprocess
     import sys
     if sys.platform != "darwin":
         return False
-    dest = str(grafica(pid)).replace('"', '\\"')
-    r = subprocess.run(["osascript", "-e", f'set the clipboard to (read (POSIX file "{dest}") as «class PNGf»)'],
-                       capture_output=True, timeout=10)
-    return r.returncode == 0
-
-
-def link_pubblica(pid: int) -> str:
-    """Apre LinkedIn con il testo del post già inserito nel riquadro di pubblicazione."""
     testo = db.q("SELECT testo FROM post_linkedin WHERE id=?", (pid,))[0]["testo"]
-    return "https://www.linkedin.com/feed/?shareActive=true&text=" + quote(testo)
+    return subprocess.run(["pbcopy"], input=testo.encode("utf-8"), timeout=10).returncode == 0
+
+
+def link_pubblica() -> str:
+    """Riquadro vuoto di un nuovo post. Il testo non passa dal link: LinkedIn lo tronca al primo "?" o "#"."""
+    return "https://www.linkedin.com/feed/?shareActive=true"
 
 
 def genera(tema: str) -> dict:

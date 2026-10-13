@@ -3,7 +3,6 @@ import unittest
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
-from urllib.parse import unquote
 
 from app.core import config, db
 from app.modules import linkedin_post as lp
@@ -37,9 +36,7 @@ class LinkedinPostTests(unittest.TestCase):
         self.assertFalse(lp.aggiorna(pid, {"testo": "x" * 3001})["ok"])
         lp.aggiorna(pid, {"stato": "approvato", "data_prevista": "2000-01-01"})
         self.assertEqual([pid], [p["id"] for p in lp.di_oggi()])
-        url = lp.link_pubblica(pid)
-        self.assertTrue(url.startswith("https://www.linkedin.com/feed/?shareActive=true&text="))
-        self.assertIn("L'intelligenza artificiale", unquote(url))
+        self.assertEqual(lp.link_pubblica(), "https://www.linkedin.com/feed/?shareActive=true")
         lp.aggiorna(pid, {"stato": "pubblicato"})
         self.assertEqual([], lp.di_oggi())
 

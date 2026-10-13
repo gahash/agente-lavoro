@@ -55,6 +55,27 @@ def url_collega() -> str:
         {"response_type": "code", "client_id": cid, "redirect_uri": REDIRECT, "state": st, "scope": SCOPE})
 
 
+def _salva_token(token: str, durata: float) -> dict:
+    """Verifica il token chiedendo a LinkedIn chi è l'utente, poi lo salva nel Portachiavi."""
+    r = httpx.get("https://api.linkedin.com/v2/userinfo", timeout=30, headers={"Authorization": f"Bearer {token}"})
+    if r.status_code == 401:
+        raise RuntimeError("LinkedIn non riconosce il token: generane uno nuovo con i permessi openid, profile e w_member_social")
+    r.raise_for_status()
+    me = r.json()
+    vault.set_cred("linkedin_token", json.dumps({"token": token, "scade": time.time() + durata,
+                                                 "autore": f"urn:li:person:{me['sub']}", "nome": me.get("name", "")}))
+    db.log("linkedin", f"LinkedIn collegato per la pubblicazione automatica ({me.get('name', '')})")
+    return stato()
+
+
+def usa_token(token: str) -> dict:
+    """Token incollato a mano dal generatore di LinkedIn (OAuth 2.0 tools): vale 60 giorni."""
+    token = (token or "").strip()
+    if not token:
+        raise RuntimeError("Incolla il token di accesso generato su LinkedIn")
+    return _salva_token(token, 60 * 86400)
+
+
 def completa(code: str, state: str) -> dict:
     """Ritorno da LinkedIn dopo il consenso: scambia il codice con il token e lo salva nel Portachiavi."""
     if time.time() - _stati.pop(state, 0) > 900:
@@ -64,12 +85,7 @@ def completa(code: str, state: str) -> dict:
         "client_id": vault.get_cred("linkedin_client_id"), "client_secret": vault.get_cred("linkedin_client_secret")})
     r.raise_for_status()
     d = r.json()
-    me = httpx.get("https://api.linkedin.com/v2/userinfo", timeout=30,
-                   headers={"Authorization": f"Bearer {d['access_token']}"}).json()
-    vault.set_cred("linkedin_token", json.dumps({"token": d["access_token"], "scade": time.time() + d.get("expires_in", 0),
-                                                 "autore": f"urn:li:person:{me['sub']}", "nome": me.get("name", "")}))
-    db.log("linkedin", f"LinkedIn collegato per la pubblicazione automatica ({me.get('name', '')})")
-    return stato()
+    return _salva_token(d["access_token"], d.get("expires_in", 60 * 86400))
 
 
 def scollega() -> dict:

@@ -55,7 +55,26 @@ const MOD = {posta: "✉️", caccia: "🔎", pmi: "🏢", lavoro: "💼", porta
   crm: "🗂️", browser: "🌐", github: "📦", progetti: "📦", ai: "🤖", api: "⚙️"};
 const TIPO = {proposta_pmi: "proposte a PMI", candidatura: "candidature", follow_up: "solleciti"};
 const esitoPubblica = r => r.modo === "api" ? "✅ Pubblicato su LinkedIn con l'immagine"
-  : `LinkedIn aperto con il testo pronto. ${r.appunti ? "L'immagine è negli appunti: clicca nel post e premi ⌘V" : "Trascina l'immagine nel post"}, poi "Pubblica"`;
+  : `LinkedIn aperto: ${r.appunti ? "clicca nel riquadro e premi ⌘V per il testo" : "incolla il testo"}, poi trascina nel post l'immagine selezionata nel Finder e premi "Pubblica"`;
+// "Pubblica": con LinkedIn collegato pubblica davvero (testo + immagine); altrimenti spiega come collegarlo
+async function pubblicaPost(btn, id, vista) {
+  const chiama = b => run(b, () => api(`/api/linkedin/post/${id}/pubblica`, {}), esitoPubblica)
+    .then(r => { if (r?.modo === "api") go(vista); });
+  if (STATO.linkedin.collegato) return chiama(btn);
+  modal(`<h2 style="margin-top:0">Collega LinkedIn per pubblicare con un clic</h2>
+    <p>LinkedIn permette a un'app di pubblicare per te solo dopo un'autorizzazione, che si dà <b>una volta sola</b>.
+    Da quel momento questo pulsante pubblica subito il post con la sua immagine, e i post approvati escono da soli il giorno previsto.</p>
+    <p class="small muted">${STATO.linkedin.configurato ? "Client ID e Secret sono già inseriti: manca solo l'autorizzazione."
+      : "Servono Client ID e Client Secret di un'app su linkedin.com/developers: in Impostazioni trovi i 4 passaggi."}</p>
+    <div class="row" style="margin-top:14px">
+      ${STATO.linkedin.configurato ? `<button id="m-collega">🔗 Collega LinkedIn adesso</button>` : `<button id="m-imp">⚙️ Vai alle Impostazioni</button>`}
+      <button class="sec" id="m-mano">Per ora pubblico io (testo con ⌘V, immagine da trascinare)</button>
+      <button class="sec" onclick="closeModal()">Annulla</button></div>`);
+  if ($("#m-collega")) $("#m-collega").onclick = e => run(e.target, () => api("/api/linkedin/collega", {}),
+    "Autorizza nella pagina di LinkedIn che si è aperta, poi torna qui e premi di nuovo Pubblica").then(closeModal);
+  if ($("#m-imp")) $("#m-imp").onclick = () => { closeModal(); go("impostazioni"); };
+  $("#m-mano").onclick = e => chiama(e.target).then(closeModal);
+}
 const ora = s => s ? new Date(s).toLocaleTimeString("it-IT", {hour: "2-digit", minute: "2-digit"}) : "";
 const nome = m => esc((m || "").replace(/<.*>/, "").replace(/"/g, "").trim() || m);
 
@@ -89,7 +108,7 @@ V.home = async m => {
     <p class="small muted" style="margin:4px 0 0">${STATO.linkedin.collegato
       ? `LinkedIn è collegato: esce da solo con l'immagine alle ${esc(STATO.impostazioni.linkedin_ora)}. Premi <b>Pubblica ora</b> per non aspettare.`
       : `Per farlo uscire da solo con l'immagine <a href="#" data-go="impostazioni">collega LinkedIn nelle Impostazioni</a> (una volta sola).
-         Intanto: <b>Pubblica ora</b> apre LinkedIn con il testo pronto e l'immagine negli appunti (⌘V), poi premi <b>L'ho pubblicato</b>.`}</p></div>
+         Intanto: <b>Pubblica ora</b> apre il riquadro del post con il testo negli appunti (⌘V) e l'immagine selezionata nel Finder da trascinare; poi premi <b>L'ho pubblicato</b>.`}</p></div>
     <div class="row" style="margin:0;flex-shrink:0"><button data-pub="${p.id}">🚀 Pubblica ora</button>${STATO.linkedin.collegato ? "" : `<button class="sec" data-fatto="${p.id}">✓ L'ho pubblicato</button>`}</div>
   </div>`).join("")}
 
@@ -141,8 +160,7 @@ V.home = async m => {
   const disegnaTodo = async () => { const l = await aggiornaBadgeTodo(); $("#home-todo").innerHTML = todoHtml(l.filter(a => !a.fatto).slice(0, 8), true); };
   await disegnaTodo(); todoEvents(m, disegnaTodo);
   m.querySelectorAll("[data-giorni]").forEach(b => b.onclick = () => { V.home.giorni = +b.dataset.giorni; go("home"); });
-  m.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => run(b, () => api(`/api/linkedin/post/${b.dataset.pub}/pubblica`, {}), esitoPubblica)
-    .then(r => { if (r?.modo === "api") go("home"); }));
+  m.querySelectorAll("[data-pub]").forEach(b => b.onclick = () => pubblicaPost(b, b.dataset.pub, "home"));
   m.querySelectorAll("[data-fatto]").forEach(b => b.onclick = () => run(b, () => api(`/api/linkedin/post/${b.dataset.fatto}`, {stato: "pubblicato"}),
     "Post segnato come pubblicato").then(() => go("home")));
   $("#q-posta").onclick = e => run(e.target, () => api("/api/posta/controlla", {}), r => `Posta: ${r.nuovi} nuovi messaggi`);
@@ -487,7 +505,7 @@ V.linkedin = async m => {
     if (a === "scarta") return run(t, () => salva({stato: "scartato"})).then(() => go("linkedin"));
     if (a === "fatto") return run(t, () => salva({stato: "pubblicato"}), "Segnato come pubblicato").then(() => go("linkedin"));
     if (a === "pubblica") { await salva({});
-      return run(t, () => api(`/api/linkedin/post/${id}/pubblica`, {}), esitoPubblica).then(r => { if (r?.modo === "api") go("linkedin"); }); }
+      return pubblicaPost(t, id, "linkedin"); }
   };
 };
 
@@ -737,6 +755,9 @@ V.impostazioni = async m => {
           <li>In <b>Products</b> aggiungi <b>Share on LinkedIn</b> e <b>Sign In with LinkedIn using OpenID Connect</b>.</li>
           <li>In <b>Auth</b> aggiungi l'URL di reindirizzamento <code>${esc(STATO.linkedin.redirect)}</code>.</li>
           <li>Copia Client ID e Client Secret nel riquadro 🔐 Credenziali (in alto), salva, poi premi <b>Collega LinkedIn</b>.</li></ol>`}
+    <label>Oppure incolla il token di accesso generato su LinkedIn (<a href="https://www.linkedin.com/developers/tools/oauth/token-generator" target="_blank">OAuth 2.0 tools → Create token</a>,
+      permessi openid, profile, w_member_social)</label>
+    <div class="row"><input id="li-token" type="password" placeholder="Token di accesso LinkedIn" style="flex:1" autocomplete="off"><button class="sm" id="li-token-salva">💾 Salva token</button></div>
     <div class="row"><button class="sm" id="li-collega" ${STATO.linkedin.configurato ? "" : "disabled"}>${STATO.linkedin.collegato ? "🔄 Ricollega" : "🔗 Collega LinkedIn"}</button>
       ${STATO.linkedin.collegato ? `<button class="sm sec" id="li-scollega">Scollega</button>` : ""}</div>
     <label><input type="checkbox" id="s-linkedin_auto" ${s.linkedin_auto ? "checked" : ""}> Pubblica da solo i post approvati, il giorno previsto alle</label>
@@ -772,6 +793,8 @@ V.impostazioni = async m => {
   $("#s-auto").onchange = e => run(null, () => api("/api/avvio-automatico", {attivo: e.target.checked}),
     r => r.attivo ? "Partirà all'accensione del PC" : "Avvio automatico disattivato");
   $("#prova-c").onclick = e => provaPosta(e.target);
+  $("#li-token-salva").onclick = e => run(e.target, () => api("/api/linkedin/token", {token: $("#li-token").value}),
+    r => `✅ LinkedIn collegato${r.nome ? " come " + r.nome : ""}`).then(r => { if (r?.collegato) go("impostazioni"); });
   $("#li-collega").onclick = e => run(e.target, () => api("/api/linkedin/collega", {}), "Autorizza l'app nella pagina di LinkedIn che si è aperta, poi torna qui e ricarica");
   if ($("#li-scollega")) $("#li-scollega").onclick = e => run(e.target, () => api("/api/linkedin/scollega", {}), "LinkedIn scollegato").then(() => go("impostazioni"));
   $("#save-c").onclick = e => { const d = {}; Object.keys(c).forEach(k => { const v = $("#c-" + k).value; if (v !== "" || !c[k].segreto) d[k] = v; });
