@@ -1,5 +1,6 @@
 """Modulo C — Bozze personalizzate (candidature, proposte PMI, follow-up, risposte).
-Tutte finiscono in stato 'da_approvare'. L'invio avviene solo da modules/posta.invia_approvata."""
+Finiscono in 'da_approvare', tranne proposte, solleciti e candidature che superano tutti i controlli
+(approvazione automatica). L'invio avviene solo da modules/posta.invia_approvata."""
 from __future__ import annotations
 
 import re
@@ -84,7 +85,7 @@ def promesse_rischiose(corpo: str) -> list[str]:
 
 
 TU_RX = re.compile(r"\b(tu|tuo|tua|tuoi|tue|ti|te|puoi|vuoi|hai)\b", re.I)
-AUTO_TIPI = ("proposta_pmi", "follow_up")
+AUTO_TIPI = ("proposta_pmi", "follow_up", "candidatura")
 
 
 def motivi_blocco(tipo: str, destinatario: str, oggetto: str, corpo: str) -> list[str]:
@@ -102,7 +103,9 @@ def motivi_blocco(tipo: str, destinatario: str, oggetto: str, corpo: str) -> lis
         m.append("dà del tu")
     if tipo == "proposta_pmi" and not 300 <= len(testo) <= 1600:
         m.append("lunghezza anomala")
-    if not testo.lstrip().startswith(("Buongiorno", "Buonasera", "Gentile")):
+    if tipo == "candidatura" and not 300 <= len(testo) <= 2000:
+        m.append("lunghezza anomala")
+    if not testo.lstrip().startswith(("Buongiorno", "Buonasera", "Gentile", "Salve", "Dear", "Hello")):
         m.append("saluto iniziale mancante")
     if not oggetto or len(oggetto) > 90:
         m.append("oggetto mancante o troppo lungo")
@@ -148,14 +151,17 @@ def candidatura(opp_id: int) -> dict:
     sys = (f"Scrivi una email di candidatura in {lingua} (oggetto e testo entrambi in {lingua}), massimo 150 parole, "
            "tono professionale e diretto, 3-4 brevi paragrafi separati da una riga vuota. "
            "Usa SOLO i dati del profilo: non inventare esperienze, aziende, anni o numeri. Cita 1 progetto pertinente "
-           "e collega 2 requisiti dell'annuncio a competenze reali. Chiudi proponendo una call. NON scrivere saluti finali "
+           "e collega 2 requisiti dell'annuncio a competenze reali. Chiudi proponendo una call. Inizia con un saluto "
+           "(\"Buongiorno,\" in italiano, \"Dear Hiring Team,\" in inglese). Dai del lei. NON scrivere saluti finali "
            "né firma (li aggiunge il sistema). Rispondi in JSON: {\"oggetto\": \"...\", \"corpo\": \"...\"}")
     user = f"PROFILO:\n{_profilo(s)}\n\nANNUNCIO:\n" + llm.dati(
         f"{o['azienda']} — {o['ruolo']}\nRequisiti: {o['requisiti']}\n{o['descrizione']}", 3500)
     d = llm.chat_json(sys, user, max_tokens=500, temperature=0.4)
     corpo = pulisci(d.get("corpo", "")) + "\n\n" + ("Best regards,\n" if inglese else "Cordiali saluti,\n") + s["firma"]
-    bid = _salva("candidatura", o["contatto"], d.get("oggetto") or f"Candidatura {o['ruolo']}", corpo,
-                 "opportunita", opp_id, note=f"Annuncio: {o['link']} — candidarsi dal link se non c'è email")
+    from .lavoro import EMAIL_RX
+    email = next(iter(EMAIL_RX.findall(o["contatto"] or "") or EMAIL_RX.findall(o["descrizione"] or "")), "")
+    bid = _salva("candidatura", email, d.get("oggetto") or f"Candidatura {o['ruolo']}", corpo,
+                 "opportunita", opp_id, note=f"Annuncio: {o['link']}" + ("" if email else " — candidarsi dal link (l'annuncio non ha email)"))
     db.update("opportunita", opp_id, {"stato": "Bozza pronta"})
     return {"ok": True, "id": bid}
 

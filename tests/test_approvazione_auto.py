@@ -41,7 +41,11 @@ class ApprovazioneAutomaticaTests(unittest.TestCase):
             with self.subTest(nome):
                 self.assertEqual("da_approvare", self._stato(corpo=corpo)["stato"])
         self.assertEqual("da_approvare", self._stato(dest="")["stato"])
-        self.assertEqual("da_approvare", self._stato(tipo="candidatura")["stato"])
+        self.assertEqual("da_approvare", self._stato(tipo="linkedin")["stato"])
+
+    def test_candidature_con_email_approvate_da_sole(self):
+        self.assertEqual("approvata", self._stato(tipo="candidatura", dest="jobs@azienda.com", ogg="Candidatura Senior AI Engineer")["stato"])
+        self.assertEqual("da_approvare", self._stato(tipo="candidatura", dest="", ogg="Candidatura Senior AI Engineer")["stato"])
 
     def test_disattivabile_e_con_tetto_giornaliero(self):
         config.save_settings({"auto_max_giorno": 2})

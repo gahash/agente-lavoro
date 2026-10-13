@@ -40,5 +40,16 @@ class FiltroTests(unittest.TestCase):
         self.assertFalse(self.ok(ruolo="AI Trainer", tipo="contract", remoto="Sì (USA, UK, India)"))
 
 
+    def test_annuncio_hacker_news_con_email_offuscata(self):
+        c = {"id": 7, "text": "Acme AI | Senior Python Engineer | REMOTE (Europe) | Full-time | €80k<p>Write to jobs [at] acme [dot] ai"}
+        a = lavoro._annuncio_hn(c)
+        self.assertEqual(("Acme AI", "Senior Python Engineer", "jobs@acme.ai", "Sì (Europe)", "€80k"),
+                         (a["azienda"], a["ruolo"], a["contatto"], a["remoto"], a["compenso"]))
+        self.assertTrue(self.ok(**{k: a[k] for k in ("ruolo", "tipo", "remoto", "descrizione")}))
+        self.assertIsNone(lavoro._annuncio_hn({"id": 8, "text": "Acme | Engineer | Onsite NYC<p>jobs@acme.ai"}))
+        self.assertIsNone(lavoro._annuncio_hn({"id": 9, "text": "Acme | Engineer | REMOTE<p>apply on our site"}))
+        self.assertIsNone(lavoro._annuncio_hn({"id": 10, "text": "Acme | Engineer | Remote US<p>jobs@acme.ai"}))
+
+
 if __name__ == "__main__":
     unittest.main()

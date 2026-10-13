@@ -146,7 +146,7 @@ V.home = async m => {
     <div><h2>🤖 Prossimi automatismi</h2>
     <div class="card">${prossimi.map(j => `<div class="riga"><span class="t-ora" style="width:86px">${esc(j.prossima)}</span>
       <span>${JOB[j.id.replace(/\d+$/, "")] || JOB[j.id] || esc(j.id)}</span></div>`).join("")}
-      <p class="small muted" style="margin:8px 0 0">Funzionano solo con l'app aperta. ${STATO.impostazioni.approvazione_automatica ? `Proposte e solleciti che superano tutti i controlli si approvano da soli (max ${STATO.impostazioni.auto_max_giorno} al giorno); il resto aspetta il tuo OK.` : "Nessun messaggio parte senza la tua approvazione."}</p></div></div>
+      <p class="small muted" style="margin:8px 0 0">Funzionano solo con l'app aperta. ${STATO.impostazioni.approvazione_automatica ? `Proposte, solleciti e candidature che superano tutti i controlli si approvano da soli (max ${STATO.impostazioni.auto_max_giorno} al giorno); il resto aspetta il tuo OK.` : "Nessun messaggio parte senza la tua approvazione."}</p></div></div>
   </div>
 
   <h2>Azioni rapide</h2>

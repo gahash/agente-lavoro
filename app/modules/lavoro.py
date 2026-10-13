@@ -115,8 +115,41 @@ def fonte_arbeitnow() -> list[dict]:
             for j in r.json().get("data", []) if j.get("remote")]
 
 
+EMAIL_RX = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}", re.I)
+
+
+def _annuncio_hn(c: dict) -> dict | None:
+    """Un commento del thread "Who is hiring?": prima riga "Azienda | Ruolo | Luogo | REMOTE | ...".
+    Si tengono solo gli annunci da remoto con un'email a cui candidarsi (spesso scritta come "nome [at] dominio")."""
+    t = html.unescape(re.sub(r"<[^>]+>", "", re.sub(r"<p>", "\n", c.get("text") or "")))
+    t = re.sub(r"\s*[\[({<]\s*at\s*[\])}>]\s*", "@", t, flags=re.I)
+    t = re.sub(r"\s*[\[({<]\s*dot\s*[\])}>]\s*", ".", t, flags=re.I)
+    parti = [x.strip() for x in t.split("\n")[0].split("|")]
+    remoto = next((x for x in parti if re.search(r"\bremote\b", x, re.I)), "")
+    email = EMAIL_RX.findall(t)
+    if len(parti) < 2 or not remoto or not email:
+        return None
+    if re.search(r"\b(us|usa|u\.s\.?|canada|north america|americas?)\b", remoto, re.I) and not OK_LOC.search(
+            re.sub(r"\bremote\b", "", remoto, flags=re.I)):
+        return None                                        # "Remote US", "REMOTE (US/Canada)": non aperto all'Italia
+    luogo = re.search(r"\(([^)]*)\)", remoto)
+    return {"fonte": "Hacker News", "uid": f"hn-{c['id']}", "azienda": parti[0][:120], "ruolo": parti[1][:160],
+            "link": f"https://news.ycombinator.com/item?id={c['id']}", "remoto": f"Sì ({luogo.group(1) if luogo else remoto})",
+            "compenso": next((x for x in parti if re.search(r"[$€£]\s?\d", x)), ""), "tipo": "",
+            "requisiti": "", "descrizione": t[:3000], "contatto": email[0]}
+
+
+def fonte_hn() -> list[dict]:
+    """Thread mensile "Ask HN: Who is hiring?" (API pubblica di Algolia): annunci con email diretta."""
+    r = httpx.get("https://hn.algolia.com/api/v1/search_by_date?tags=story,author_whoishiring&hitsPerPage=10",
+                  headers=UA, timeout=30)
+    thread = next(h for h in r.json()["hits"] if h["title"].startswith("Ask HN: Who is hiring?"))
+    item = httpx.get(f"https://hn.algolia.com/api/v1/items/{thread['objectID']}", headers=UA, timeout=60).json()
+    return [a for a in map(_annuncio_hn, item.get("children") or []) if a]
+
+
 FONTI = {"Remote OK": fonte_remoteok, "Himalayas": fonte_himalayas, "We Work Remotely": fonte_wwr,
-         "Arbeitnow": fonte_arbeitnow}
+         "Arbeitnow": fonte_arbeitnow, "Hacker News": fonte_hn}
 
 
 def ricerche_browser() -> list[dict]:
