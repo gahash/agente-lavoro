@@ -518,22 +518,17 @@ V.video = async m => {
   const giorno = s => s ? new Date(s + "T12:00").toLocaleDateString("it-IT", {weekday: "short", day: "2-digit", month: "2-digit"}) : "—";
   const s = STATO.impostazioni;
   m.innerHTML = `<h1>Video brevi</h1>
-  <p class="sub">Pillole di 15–30 secondi: una frase per riga = una scena, letta dalla voce del Mac e scritta grande a schermo
-   (su LinkedIn i video partono senza audio). ${d.collegato ? `Gli approvati escono da soli il giorno previsto alle ${esc(s.linkedin_ora)}.`
+  <p class="sub">Pillole di 15–30 secondi: una frase per riga = una scena, scritta grande a schermo e letta con la <b>tua voce</b>
+   (su LinkedIn i video partono senza audio, quindi il testo basta anche da solo). ${d.collegato ? `Gli approvati escono da soli il giorno previsto alle ${esc(s.linkedin_ora)}.`
    : `Per pubblicarli da soli <a href="#" onclick="go('impostazioni')">collega LinkedIn</a>.`}</p>
-  <div class="cols" style="margin-bottom:14px">
-    <div class="card"><b>✨ Nuovo video con l'AI locale</b>
-      <div class="row" style="margin:8px 0 0"><input id="v-tema" placeholder="Tema (es. cos'è un agente vocale)" style="flex:1"><button id="v-gen">Scrivi il copione</button></div>
-      <p class="small muted" style="margin:6px 0 0">Il copione compare qui sotto in bozza dopo qualche minuto.</p></div>
-    <div class="card"><b>🎙️ Voce</b>
-      <div class="row" style="margin:8px 0 0"><select id="v-voce">${[["", "Senza voce (solo testo)"], ...d.voci.map(v => [v, v])]
-        .map(([v, l]) => `<option value="${esc(v)}" ${v === (s.video_voce ?? "Alice") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>
-      <button class="sec sm" id="v-voce-salva">Salva</button></div>
-      <p class="small muted" style="margin:6px 0 0">Dopo aver cambiato voce premi "Rifai il video" sui video da aggiornare.</p></div>
-  </div>
+  <div class="card" style="margin-bottom:14px"><b>✨ Nuovo video con l'AI locale</b>
+    <div class="row" style="margin:8px 0 0"><input id="v-tema" placeholder="Tema (es. cos'è un agente vocale)" style="flex:1"><button id="v-gen">Scrivi il copione</button></div>
+    <p class="small muted" style="margin:6px 0 0">Il copione compare qui sotto in bozza dopo qualche minuto. Poi premi <b>🎙️ Registra la voce</b> e leggilo:
+      il testo a schermo segue la tua voce. Niente voci sintetiche: senza registrazione il video è solo testo.</p></div>
   ${d.video.map(v => `<div class="card draft" style="margin-bottom:12px" data-id="${v.id}">
     <div class="row" style="justify-content:space-between;margin:0">
-      <span><span class="tag">${ST[v.stato] || esc(v.stato)}</span> <b>${esc(v.tema)}</b></span>
+      <span><span class="tag">${ST[v.stato] || esc(v.stato)}</span> <b>${esc(v.tema)}</b>
+        <span class="tag">${v.voce ? "🎙️ con la tua voce" : "🔇 solo testo"}</span></span>
       <span class="small muted">📅 <input type="date" class="f-data" value="${esc(v.data_prevista || "")}" style="padding:2px 6px"> ${giorno(v.data_prevista)}</span></div>
     <div style="display:flex;gap:14px;margin-top:8px;align-items:flex-start;flex-wrap:wrap">
       <div style="flex:1 1 360px">
@@ -545,7 +540,9 @@ V.video = async m => {
     </div>
     <div class="row" style="margin:8px 0 0">
       ${v.stato === "bozza" ? `<button class="ok" data-a="approva">✅ Approva</button>` : ""}
-      ${v.stato !== "pubblicato" ? `<button class="sec" data-a="salva">💾 Salva</button><button class="sec" data-a="rifai">🎬 Rifai il video</button>` : ""}
+      ${v.stato !== "pubblicato" ? `<button class="sec" data-a="salva">💾 Salva</button><button data-a="registra">🎙️ ${v.voce ? "Registra di nuovo" : "Registra la voce"}</button>
+        <label class="btn sec" style="margin:0;cursor:pointer;font-size:inherit">⬆️ Carica audio<input type="file" class="f-audio" accept="audio/*,.m4a,.mp3,.wav" hidden></label>
+        ${v.voce ? `<button class="sec" data-a="togli">Togli la voce</button>` : ""}<button class="sec" data-a="rifai">🎬 Rifai il video</button>` : ""}
       ${v.stato !== "pubblicato" && d.collegato ? `<button data-a="pubblica">🚀 Pubblica ora</button>` : ""}
       <button class="sec" data-a="file">📂 Mostra il file</button>
       ${v.stato !== "pubblicato" ? `<button class="bad" data-a="scarta">Scarta</button>` : `<span class="small muted">pubblicato il ${dt(v.pubblicato_il)}</span>`}
@@ -557,13 +554,18 @@ V.video = async m => {
       .catch(e => { box.innerHTML = ""; toast(e.message, true); }); };
   $("#v-gen").onclick = e => { const tema = $("#v-tema").value.trim(); if (!tema) return toast("Scrivi un tema", true);
     run(e.target, () => api("/api/video/genera", {tema}), "L'AI sta scrivendo il copione: ricarica tra qualche minuto"); };
-  $("#v-voce-salva").onclick = e => run(e.target, () => api("/api/impostazioni", {video_voce: $("#v-voce").value}), "Voce salvata").then(refreshStato);
+  const inviaVoce = (id, blob) => caricaFile(`/api/video/${id}/voce`, blob, () => {});
+  m.onchange = e => { const f = e.target.classList.contains("f-audio") && e.target.files[0]; if (!f) return;
+    const c = e.target.closest(".draft");
+    run(null, () => inviaVoce(c.dataset.id, f), r => `Voce caricata (${r.durata} s): il video è stato rifatto`).then(r => { if (r?.ok) go("video"); }); };
   m.onclick = async e => {
     const t = e.target, c = t.closest(".draft"); if (!c || !t.dataset.a) return;
     const id = c.dataset.id, a = t.dataset.a;
     const salva = extra => api(`/api/video/${id}`, {copione: $(".f-copione", c).value, testo: $(".f-testo", c).value,
       data_prevista: $(".f-data", c).value, ...extra});
     if (a === "vedi") return guarda(c);
+    if (a === "registra") { await salva({}); return registraVoce(id, $(".f-copione", c).value, d.chiusura, inviaVoce); }
+    if (a === "togli") return run(t, () => api(`/api/video/${id}/voce`, undefined, "DELETE"), "Voce tolta").then(() => go("video"));
     if (a === "salva") return run(t, () => salva({}), "Salvato");
     if (a === "rifai") return run(t, async () => { await salva({}); await api(`/api/video/${id}/rifai`, {}); }, "Video rifatto").then(() => guarda(c));
     if (a === "file") return run(t, () => api(`/api/video/${id}/mostra`, {}), "Video selezionato nel Finder");
@@ -584,6 +586,40 @@ function caricaFile(url, file, progresso) {
       x.status < 300 ? ok(d) : ko(new Error(d.detail || `Errore ${x.status}`)); };
     x.onerror = () => ko(new Error("Caricamento interrotto")); x.send(file);
   });
+}
+
+// registrazione dal microfono: il copione grande da leggere, conto alla rovescia, stop, ascolto e conferma
+async function registraVoce(id, copione, chiusura, invia) {
+  const frasi = [...copione.split("\n").map(x => x.trim()).filter(Boolean), chiusura];
+  let flusso;
+  try { flusso = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}}); }
+  catch (e) { return toast("Microfono non disponibile: consenti l'accesso al microfono nel browser", true); }
+  modal(`<h2 style="margin-top:0">🎙️ Leggi il copione con calma</h2>
+    <div style="font-size:20px;line-height:1.6">${frasi.map(f => `<p style="margin:0 0 10px">${esc(f)}</p>`).join("")}</div>
+    <p class="small muted">Lascia un attimo di pausa tra una frase e l'altra. I silenzi all'inizio e alla fine si tolgono da soli.</p>
+    <div class="row" style="margin-top:12px"><button id="rv-via">● Inizia a registrare</button><span id="rv-stato" class="small muted"></span></div>`);
+  const fine = () => flusso.getTracks().forEach(t => t.stop());
+  $("#modal").addEventListener("click", e => { if (e.target.id === "modal") fine(); }, {once: true});
+  $("#rv-via").onclick = async () => {
+    const st = $("#rv-stato"), b = $("#rv-via"); b.disabled = true;
+    for (const n of [3, 2, 1]) { st.textContent = `Si parte tra ${n}…`; await new Promise(r => setTimeout(r, 800)); }
+    const rec = new MediaRecorder(flusso), pezzi = [], t0 = Date.now();
+    rec.ondataavailable = e => pezzi.push(e.data);
+    const tic = setInterval(() => { st.textContent = `🔴 Registrazione… ${Math.round((Date.now() - t0) / 1000)} s`; }, 300);
+    rec.start(); b.disabled = false; b.textContent = "⏹ Stop"; b.className = "bad";
+    b.onclick = () => rec.stop();
+    rec.onstop = () => {
+      clearInterval(tic); fine();
+      const blob = new Blob(pezzi, {type: rec.mimeType || "audio/webm"});
+      $("#modal-box").insertAdjacentHTML("beforeend", `<audio controls src="${URL.createObjectURL(blob)}" style="width:100%;margin-top:10px"></audio>
+        <div class="row" style="margin-top:10px"><button class="ok" id="rv-usa">✅ Usa questa registrazione</button>
+        <button class="sec" id="rv-rifai">Rifai</button></div>`);
+      b.remove(); st.textContent = "Ascoltala: se va bene, usala.";
+      $("#rv-rifai").onclick = () => { closeModal(); registraVoce(id, copione, chiusura, invia); };
+      $("#rv-usa").onclick = e => run(e.target, () => invia(id, blob), r => `Voce salvata (${r.durata} s): il video è stato rifatto con la tua voce`)
+        .then(r => { if (r?.ok) { closeModal(); go("video"); } });
+    };
+  };
 }
 
 V.mieivideo = async m => {

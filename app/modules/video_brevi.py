@@ -1,15 +1,14 @@
 """Video brevi: pillole di 20-30 secondi da pubblicare su LinkedIn.
 
 Ogni video è un copione di poche frasi (una per riga = una scena). Ogni frase compare grande al centro,
-animata, ed è letta dalla voce italiana del Mac (comando `say`). LinkedIn fa partire i video senza audio,
-quindi il testo a schermo basta da solo. Formato quadrato 1080x1080, MP4 H.264 + AAC.
+animata. La voce è solo quella vera di Gaspare (registrata dall'app o caricata dal telefono): niente voci
+sintetiche. Senza registrazione il video è solo testo: LinkedIn fa partire i video senza audio. Formato quadrato 1080x1080, MP4 H.264 + AAC.
 Il flusso è quello dei post: bozza → approvato → pubblicato da solo il giorno previsto.
 """
 from __future__ import annotations
 
 import subprocess
 import sys
-import tempfile
 import wave
 from datetime import date, timedelta
 from pathlib import Path
@@ -187,20 +186,41 @@ def percorso(vid: int) -> Path:
     return CARTELLA / f"video_{vid}.mp4"
 
 
-def voci() -> list[str]:
-    """Voci italiane disponibili sul Mac (vuoto altrove: il video esce senza audio)."""
-    if sys.platform != "darwin":
-        return []
-    out = subprocess.run(["say", "-v", "?"], capture_output=True, text=True).stdout
-    return [r.split(" it_IT")[0].strip() for r in out.splitlines() if " it_IT " in r]
+def voce_path(vid: int) -> Path:
+    return CARTELLA / "voce" / f"voce_{vid}.wav"
 
 
-def _audio(frase: str, voce: str, dest: Path) -> float:
-    """Legge la frase con la voce del Mac in un WAV mono 22 kHz; restituisce la durata in secondi."""
-    subprocess.run(["say", "-v", voce, "-r", "180", "--file-format=WAVE", "--data-format=LEI16@22050",
-                    "-o", str(dest), frase], check=True, timeout=60)
-    with wave.open(str(dest)) as w:
+def _durata(wav: Path) -> float:
+    with wave.open(str(wav)) as w:
         return w.getnframes() / w.getframerate()
+
+
+def salva_voce(vid: int, sorgente: Path) -> dict:
+    """Registrazione della voce di Gaspare (dal microfono dell'app o un memo vocale del telefono):
+    convertita in WAV, tolti i silenzi iniziale e finale. Il video si rimonta con la sua voce."""
+    import imageio_ffmpeg
+    dest = voce_path(vid)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    taglia = "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15"
+    r = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(sorgente), "-vn",
+                        "-af", f"{taglia},areverse,{taglia},areverse", "-ac", "1", "-ar", "44100", str(dest)],
+                       capture_output=True, text=True, timeout=300)
+    sorgente.unlink(missing_ok=True)
+    if r.returncode != 0 or not dest.exists():
+        return {"ok": False, "errore": "Registrazione non leggibile: " + (r.stderr or "")[:200]}
+    durata = _durata(dest)
+    if durata < 3:
+        dest.unlink(missing_ok=True)
+        return {"ok": False, "errore": "La registrazione è troppo corta (meno di 3 secondi)"}
+    percorso(vid).unlink(missing_ok=True)
+    db.log("video", f"Voce registrata per il video {vid} ({durata:.0f} s)")
+    return {"ok": True, "durata": round(durata, 1)}
+
+
+def togli_voce(vid: int) -> dict:
+    voce_path(vid).unlink(missing_ok=True)
+    percorso(vid).unlink(missing_ok=True)
+    return {"ok": True}
 
 
 def _sfondo() -> Image.Image:
@@ -248,53 +268,40 @@ def monta(vid: int, forza: bool = False) -> Path:
     import imageio_ffmpeg
     v = db.q("SELECT tema, copione FROM video_brevi WHERE id=?", (vid,))[0]
     frasi = [f.strip() for f in (v["copione"] or "").splitlines() if f.strip()] + [CHIUSURA]
-    voce = load_settings().get("video_voce", "Alice") if sys.platform == "darwin" else ""
     base = _sfondo()
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        durate, wav = [], []
-        for i, f in enumerate(frasi):
-            if voce:
-                p = tmp / f"s{i}.wav"
-                durate.append(_audio(f, voce, p) + 0.5)
-                wav.append(p)
+    audio = voce_path(vid) if voce_path(vid).exists() else None
+    if audio:       # con la voce di Gaspare: ogni scena dura in proporzione alla lunghezza della frase letta
+        pesi = [len(f) + 12 for f in frasi]
+        durate = [_durata(audio) * p / sum(pesi) for p in pesi]
+        durate[-1] += 0.8
+    else:           # senza voce: solo testo, il tempo per leggerlo
+        durate = [min(5.0, 1.4 + 0.055 * len(f)) for f in frasi]
+    totale = sum(durate)
+    cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
+           "-s", f"{LATO}x{LATO}", "-r", str(FPS), "-i", "-"]
+    cmd += (["-i", str(audio), "-c:a", "aac", "-b:a", "160k"] if audio else ["-an"])
+    cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+            str(dest)]
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    enc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    fatti, n_tot = 0, int(totale * FPS)
+    for i, (f, dur) in enumerate(zip(frasi, durate)):
+        scena = _scena(base, f, v["tema"] or "Pillola AI", i == len(frasi) - 1)
+        entrata = int(0.35 * FPS)
+        for k in range(int(dur * FPS)):
+            if k < entrata:                       # dissolvenza + leggera salita del testo
+                t = (k + 1) / entrata
+                fot = Image.blend(base, scena.transform(scena.size, Image.AFFINE, (1, 0, 0, 0, 1, -int(30 * (1 - t))),
+                                                         fillcolor=FONDO), t)
             else:
-                durate.append(min(5.0, 1.4 + 0.055 * len(f)))
-        totale = sum(durate)
-        audio = None
-        if wav:                                       # unisce le frasi con mezzo secondo di pausa
-            audio = tmp / "voce.wav"
-            with wave.open(str(audio), "wb") as out:
-                out.setnchannels(1), out.setsampwidth(2), out.setframerate(22050)
-                for p, dur in zip(wav, durate):
-                    with wave.open(str(p)) as w:
-                        dati = w.readframes(w.getnframes())
-                    out.writeframes(dati + b"\0\0" * (int(dur * 22050) - len(dati) // 2))
-        cmd = [imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
-               "-s", f"{LATO}x{LATO}", "-r", str(FPS), "-i", "-"]
-        cmd += (["-i", str(audio), "-c:a", "aac", "-b:a", "128k"] if audio else [])
-        cmd += ["-c:v", "libx264", "-preset", "medium", "-crf", "23", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-                "-shortest" if audio else "-an", str(dest)]
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        enc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-        fatti, n_tot = 0, int(totale * FPS)
-        for i, (f, dur) in enumerate(zip(frasi, durate)):
-            scena = _scena(base, f, v["tema"] or "Pillola AI", i == len(frasi) - 1)
-            entrata = int(0.35 * FPS)
-            for k in range(int(dur * FPS)):
-                if k < entrata:                       # dissolvenza + leggera salita del testo
-                    t = (k + 1) / entrata
-                    fot = Image.blend(base, scena.transform(scena.size, Image.AFFINE, (1, 0, 0, 0, 1, -int(30 * (1 - t))),
-                                                             fillcolor=FONDO), t)
-                else:
-                    fot = scena.copy()
-                ImageDraw.Draw(fot).rectangle([0, LATO - 10, int(LATO * fatti / max(n_tot, 1)), LATO], fill=ACCENTO)
-                enc.stdin.write(fot.tobytes())
-                fatti += 1
-        enc.stdin.close()
-        if enc.wait() != 0:
-            dest.unlink(missing_ok=True)
-            raise RuntimeError("Montaggio non riuscito: " + enc.stderr.read().decode()[:300])
+                fot = scena.copy()
+            ImageDraw.Draw(fot).rectangle([0, LATO - 10, int(LATO * fatti / max(n_tot, 1)), LATO], fill=ACCENTO)
+            enc.stdin.write(fot.tobytes())
+            fatti += 1
+    enc.stdin.close()
+    if enc.wait() != 0:
+        dest.unlink(missing_ok=True)
+        raise RuntimeError("Montaggio non riuscito: " + enc.stderr.read().decode()[:300])
     db.log("video", f"Video montato: {v['tema']} ({totale:.0f} s)")
     return dest
 

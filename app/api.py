@@ -292,7 +292,27 @@ def li_post_pubblica(pid: int):
 
 @app.get("/api/video", dependencies=A)
 def video_lista(caricati: bool = False):
-    return {"video": video_brevi.lista(caricati), "voci": video_brevi.voci(), "collegato": linkedin_api.stato()["collegato"]}
+    video = [{**v, "voce": video_brevi.voce_path(v["id"]).exists()} for v in video_brevi.lista(caricati)]
+    return {"video": video, "chiusura": video_brevi.CHIUSURA, "collegato": linkedin_api.stato()["collegato"]}
+
+
+@app.post("/api/video/{vid}/voce", dependencies=A)
+async def video_voce(vid: int, request: Request):
+    """Registrazione della voce (corpo grezzo: webm/m4a/mp3/wav), scritta su disco a pezzi."""
+    import asyncio
+    import secrets as _s
+    cartella = video_brevi.CARTELLA / "voce"
+    cartella.mkdir(parents=True, exist_ok=True)
+    tmp = cartella / f".arrivo-{_s.token_hex(6)}"
+    with open(tmp, "wb") as f:
+        async for pezzo in request.stream():
+            f.write(pezzo)
+    return await asyncio.to_thread(lambda: ok(video_brevi.salva_voce, vid, tmp))
+
+
+@app.delete("/api/video/{vid}/voce", dependencies=A)
+def video_togli_voce(vid: int):
+    return video_brevi.togli_voce(vid)
 
 
 @app.post("/api/video/carica", dependencies=A)

@@ -19,7 +19,6 @@ class VideoBreviTests(unittest.TestCase):
             self.addCleanup(p.stop)
         db.init()
         vb.init()
-        config.save_settings({"video_voce": ""})          # senza voce: test veloce e indipendente dal Mac
 
     def test_serie_iniziale_una_volta_nei_giorni_previsti(self):
         self.assertEqual(len(vb.SERIE_INIZIALE), vb.crea_serie_iniziale())
@@ -71,6 +70,27 @@ class VideoBreviTests(unittest.TestCase):
         self.assertEqual([r["id"]], [v["id"] for v in vb.lista(caricati=True)])
         self.assertNotIn(r["id"], [v["id"] for v in vb.lista()])
         self.assertFalse(vb.carica(mp4.parent / "x.tmp", "foto.jpg")["ok"])
+
+
+    def test_voce_registrata_tagliata_e_montata(self):
+        import math, struct, wave
+        vid = db.x("INSERT INTO video_brevi (tema, copione, testo) VALUES ('Prova','Prima frase.\nSeconda frase.','x')")
+        reg = vb.CARTELLA / "reg.wav"
+        reg.parent.mkdir(parents=True, exist_ok=True)
+        with wave.open(str(reg), "wb") as w:       # 1 s di silenzio + 4 s di "voce" + 1 s di silenzio
+            w.setnchannels(1), w.setsampwidth(2), w.setframerate(16000)
+            campioni = [0] * 16000 + [int(8000 * math.sin(2 * math.pi * 220 * i / 16000)) for i in range(64000)] + [0] * 16000
+            w.writeframes(b"".join(struct.pack("<h", c) for c in campioni))
+        r = vb.salva_voce(vid, reg)
+        self.assertTrue(r["ok"], r)
+        self.assertAlmostEqual(4.0, r["durata"], delta=0.5)      # silenzi tolti
+        self.assertFalse(reg.exists())
+        f = vb.monta(vid)
+        import imageio_ffmpeg, subprocess
+        info = subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-i", str(f)], capture_output=True, text=True).stderr
+        self.assertIn("Audio: aac", info)
+        self.assertTrue(vb.togli_voce(vid)["ok"])
+        self.assertFalse(vb.voce_path(vid).exists())
 
 
 if __name__ == "__main__":
