@@ -16,8 +16,9 @@ CAMPI = {
     "gestionale_token": "Token agenda del gestionale (AGENTE_API_TOKEN in config.php)",
     "linkedin_client_id": "LinkedIn · Client ID (app su linkedin.com/developers)",
     "linkedin_client_secret": "LinkedIn · Client Secret",
+    "elevenlabs_api_key": "ElevenLabs · chiave API (voce clonata per i video)",
 }
-SEGRETI = {"imap_password", "gestionale_token", "linkedin_client_secret"}
+SEGRETI = {"imap_password", "gestionale_token", "linkedin_client_secret", "elevenlabs_api_key"}
 INTERNE = {"linkedin_token"}          # scritte solo dall'app (mai mostrate né modificabili dalla UI)
 
 

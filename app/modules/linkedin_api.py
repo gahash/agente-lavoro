@@ -144,6 +144,9 @@ def pubblica_video(vid: int, attesa: float = 300) -> dict:
     v = db.q("SELECT tema, testo, stato FROM video_brevi WHERE id=?", (vid,))[0]
     if v["stato"] == "pubblicato":
         return {"ok": True, "gia": True}
+    if (not video_brevi.voce_path(vid).exists() and load_settings().get("elevenlabs_voce_id")
+            and not db.q("SELECT file FROM video_brevi WHERE id=?", (vid,))[0]["file"]):
+        video_brevi.voce_automatica(vid)                 # mai un video muto se la voce di Gaspare è pronta
     dati = video_brevi.monta(vid).read_bytes()
     t, h = _sessione()
     with httpx.Client(timeout=120) as c:

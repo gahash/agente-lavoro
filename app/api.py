@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .core import db, llm, vault
 from .core.config import APP_NAME, DATA, UI_DIR, VERSION, load_settings, save_settings
-from .modules import (agenda, assistente, attivita, caccia, bozze, browser, github_massivo, lavoro, pianificatore, pmi, ponte, profili, linkedin_post, linkedin_api, video_brevi,
+from .modules import (agenda, assistente, attivita, caccia, bozze, browser, github_massivo, lavoro, pianificatore, pmi, ponte, profili, linkedin_post, linkedin_api, video_brevi, voce_clonata,
                       portali, posta, progetti, report, sistema)
 
 # token di sessione: solo la finestra dell'app lo conosce (protegge da altri siti aperti nel browser)
@@ -308,6 +308,42 @@ async def video_voce(vid: int, request: Request):
         async for pezzo in request.stream():
             f.write(pezzo)
     return await asyncio.to_thread(lambda: ok(video_brevi.salva_voce, vid, tmp))
+
+
+@app.post("/api/video/{vid}/voce-auto", dependencies=A)
+def video_voce_auto(vid: int):
+    return ok(video_brevi.voce_automatica, vid)
+
+
+@app.post("/api/video/voce-auto-tutti", dependencies=A)
+def video_voce_auto_tutti():
+    """Dà la voce clonata a tutti i video in bozza o approvati che ancora non ce l'hanno (in background)."""
+    import threading
+    da_fare = [v["id"] for v in video_brevi.lista() if v["stato"] != "pubblicato" and not video_brevi.voce_path(v["id"]).exists()]
+    threading.Thread(target=lambda: [ok(video_brevi.voce_automatica, i) for i in da_fare], daemon=True).start()
+    return {"ok": True, "n": len(da_fare)}
+
+
+@app.get("/api/voce", dependencies=A)
+def voce_stato():
+    return voce_clonata.stato()
+
+
+@app.post("/api/voce/campione", dependencies=A)
+async def voce_campione(request: Request, nome: str = ""):
+    import asyncio
+    import secrets as _s
+    voce_clonata.CAMPIONI.mkdir(parents=True, exist_ok=True)
+    tmp = voce_clonata.CAMPIONI / f".arrivo-{_s.token_hex(6)}"
+    with open(tmp, "wb") as f:
+        async for pezzo in request.stream():
+            f.write(pezzo)
+    return await asyncio.to_thread(lambda: ok(voce_clonata.aggiungi_campione, tmp, nome))
+
+
+@app.post("/api/voce/crea", dependencies=A)
+def voce_crea():
+    return ok(voce_clonata.crea_voce)
 
 
 @app.delete("/api/video/{vid}/voce", dependencies=A)

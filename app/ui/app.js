@@ -513,7 +513,7 @@ V.linkedin = async m => {
 };
 
 V.video = async m => {
-  const d = await api("/api/video");
+  const [d, vc] = await Promise.all([api("/api/video"), api("/api/voce")]);
   const ST = {bozza: "📝 Bozza", approvato: "✅ Approvato", pubblicato: "🚀 Pubblicato"};
   const giorno = s => s ? new Date(s + "T12:00").toLocaleDateString("it-IT", {weekday: "short", day: "2-digit", month: "2-digit"}) : "—";
   const s = STATO.impostazioni;
@@ -521,6 +521,17 @@ V.video = async m => {
   <p class="sub">Pillole di 15–30 secondi: una frase per riga = una scena, scritta grande a schermo e letta con la <b>tua voce</b>
    (su LinkedIn i video partono senza audio, quindi il testo basta anche da solo). ${d.collegato ? `Gli approvati escono da soli il giorno previsto alle ${esc(s.linkedin_ora)}.`
    : `Per pubblicarli da soli <a href="#" onclick="go('impostazioni')">collega LinkedIn</a>.`}</p>
+  <div class="card" style="margin-bottom:14px;border-left:4px solid var(--acc)"><b>🧬 La tua voce digitale</b>
+    <p class="small muted" style="margin:6px 0">L'app impara la tua voce dai campioni e legge da sola i copioni dei video, con la <b>tua</b> voce.
+      Servono 1–3 minuti di registrazioni pulite (stanza silenziosa, telefono vicino, parla come in una presentazione) e un account
+      <a href="https://elevenlabs.io" target="_blank">ElevenLabs</a> a pagamento (piano Starter o superiore, per l'uso commerciale).</p>
+    <div class="small">${vc.chiave ? "✅ Chiave ElevenLabs inserita" : `❌ Chiave ElevenLabs mancante: <a href="#" onclick="go('impostazioni')">Impostazioni → Credenziali</a>`}
+      · 🎤 Campioni: ${vc.campioni.length ? vc.campioni.map(esc).join(", ") : "nessuno"}
+      · ${vc.voce_id ? "✅ Voce creata" : "⏳ Voce non ancora creata"}</div>
+    <div class="row" style="margin:10px 0 0">
+      <label class="btn sec" style="margin:0;cursor:pointer;font-size:inherit">➕ Aggiungi campione<input type="file" id="vc-file" accept="audio/*,.m4a,.mp3,.wav" hidden></label>
+      <button id="vc-crea" ${vc.chiave && vc.campioni.length ? "" : "disabled"}>${vc.voce_id ? "🔄 Ricrea la voce" : "🧬 Crea la mia voce"}</button>
+      ${vc.voce_id ? `<button class="ok" id="vc-tutti">🎙️ Dai la mia voce a tutti i video</button>` : ""}</div></div>
   <div class="card" style="margin-bottom:14px"><b>✨ Nuovo video con l'AI locale</b>
     <div class="row" style="margin:8px 0 0"><input id="v-tema" placeholder="Tema (es. cos'è un agente vocale)" style="flex:1"><button id="v-gen">Scrivi il copione</button></div>
     <p class="small muted" style="margin:6px 0 0">Il copione compare qui sotto in bozza dopo qualche minuto. Poi premi <b>🎙️ Registra la voce</b> e leggilo:
@@ -542,6 +553,7 @@ V.video = async m => {
       ${v.stato === "bozza" ? `<button class="ok" data-a="approva">✅ Approva</button>` : ""}
       ${v.stato !== "pubblicato" ? `<button class="sec" data-a="salva">💾 Salva</button><button data-a="registra">🎙️ ${v.voce ? "Registra di nuovo" : "Registra la voce"}</button>
         <label class="btn sec" style="margin:0;cursor:pointer;font-size:inherit">⬆️ Carica audio<input type="file" class="f-audio" accept="audio/*,.m4a,.mp3,.wav" hidden></label>
+        ${vc.voce_id ? `<button class="sec" data-a="auto">🧬 Con la mia voce</button>` : ""}
         ${v.voce ? `<button class="sec" data-a="togli">Togli la voce</button>` : ""}<button class="sec" data-a="rifai">🎬 Rifai il video</button>` : ""}
       ${v.stato !== "pubblicato" && d.collegato ? `<button data-a="pubblica">🚀 Pubblica ora</button>` : ""}
       <button class="sec" data-a="file">📂 Mostra il file</button>
@@ -555,6 +567,11 @@ V.video = async m => {
   $("#v-gen").onclick = e => { const tema = $("#v-tema").value.trim(); if (!tema) return toast("Scrivi un tema", true);
     run(e.target, () => api("/api/video/genera", {tema}), "L'AI sta scrivendo il copione: ricarica tra qualche minuto"); };
   const inviaVoce = (id, blob) => caricaFile(`/api/video/${id}/voce`, blob, () => {});
+  $("#vc-file").onchange = e => { const f = e.target.files[0]; if (!f) return;
+    run(null, () => caricaFile(`/api/voce/campione?nome=${encodeURIComponent(f.name)}`, f, () => {}), "Campione aggiunto").then(() => go("video")); };
+  $("#vc-crea").onclick = e => run(e.target, () => api("/api/voce/crea", {}), "✅ La tua voce è pronta").then(r => { if (r?.ok) go("video"); });
+  if ($("#vc-tutti")) $("#vc-tutti").onclick = e => run(e.target, () => api("/api/video/voce-auto-tutti", {}),
+    r => `Sto preparando ${r.n} video con la tua voce: ricarica tra qualche minuto`);
   m.onchange = e => { const f = e.target.classList.contains("f-audio") && e.target.files[0]; if (!f) return;
     const c = e.target.closest(".draft");
     run(null, () => inviaVoce(c.dataset.id, f), r => `Voce caricata (${r.durata} s): il video è stato rifatto`).then(r => { if (r?.ok) go("video"); }); };
@@ -565,6 +582,8 @@ V.video = async m => {
       data_prevista: $(".f-data", c).value, ...extra});
     if (a === "vedi") return guarda(c);
     if (a === "registra") { await salva({}); return registraVoce(id, $(".f-copione", c).value, d.chiusura, inviaVoce); }
+    if (a === "auto") return run(t, async () => { await salva({}); return api(`/api/video/${id}/voce-auto`, {}); },
+      r => `Video rifatto con la tua voce (${r.durata} s)`).then(r => { if (r?.ok) go("video"); });
     if (a === "togli") return run(t, () => api(`/api/video/${id}/voce`, undefined, "DELETE"), "Voce tolta").then(() => go("video"));
     if (a === "salva") return run(t, () => salva({}), "Salvato");
     if (a === "rifai") return run(t, async () => { await salva({}); await api(`/api/video/${id}/rifai`, {}); }, "Video rifatto").then(() => guarda(c));

@@ -122,6 +122,7 @@ DEFAULTS: dict = {
     "linkedin_ora": "08:30",
     "linkedin_auto": True,                      # con LinkedIn collegato, i post approvati escono da soli all'ora prevista
     "video_giorni": [2, 4],                     # video brevi: mercoledì e venerdì, pubblicati all'ora dei post
+    "elevenlabs_voce_id": "",                   # voce clonata di Gaspare su ElevenLabs (la crea l'app)
     "linkedin_api_versione": "202605",          # intestazione LinkedIn-Version dell'API (formato AAAAMM)
     "invio_approvate": ["08:55", "11:15", "13:55", "16:20", "18:40"],  # partono solo le bozze già approvate
 }

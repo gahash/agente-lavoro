@@ -217,6 +217,16 @@ def salva_voce(vid: int, sorgente: Path) -> dict:
     return {"ok": True, "durata": round(durata, 1)}
 
 
+def voce_automatica(vid: int) -> dict:
+    """Legge il copione con la voce clonata di Gaspare (ElevenLabs) e rimonta il video."""
+    from . import voce_clonata
+    v = db.q("SELECT copione FROM video_brevi WHERE id=?", (vid,))[0]
+    frasi = [f.strip() for f in (v["copione"] or "").splitlines() if f.strip()] + [CHIUSURA]
+    tmp = voce_path(vid).with_suffix(".arrivo.mp3")
+    voce_clonata.leggi("\n\n".join(frasi), tmp)          # riga vuota = pausa naturale tra le scene
+    return salva_voce(vid, tmp)
+
+
 def togli_voce(vid: int) -> dict:
     voce_path(vid).unlink(missing_ok=True)
     percorso(vid).unlink(missing_ok=True)
